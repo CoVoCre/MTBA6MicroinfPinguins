@@ -3,6 +3,8 @@
 
 # Repo ignores
 lib
+eclipse/build
+eclipse/.dep
 
 
 # Logs #
