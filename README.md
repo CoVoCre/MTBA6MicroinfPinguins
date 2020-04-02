@@ -11,5 +11,3 @@ Open up your folder
 Press Command+Shift+Dot
 Your hidden files will become visible. Repeat step 2 to hide them again!
 
-
-
