@@ -8,7 +8,7 @@ The lib.zip needs to be extracted at the root, but it will not be watched (exclu
 
 ## Functions and variables names
 Without _ but with capitals between words.
-For functions in each file a prefix for the file ex for file prefix tst and function name "do this now" : tstDoThisNow
+For functions in each file a prefix (with underscore afterwards) for the file ex for file prefix tst_ and function name "do this now" : tst_DoThisNow
 
 
 # Conventions for code comments
@@ -16,7 +16,7 @@ For functions in each file a prefix for the file ex for file prefix tst and func
 ## Separators in files between topic grouped code segments
 
 /*===========================================================================*/
-/* SERIAL_USB driver related setting.                                        */
+/* Description of the section                                        */
 /*===========================================================================*/
 
 ## Description of a function, only use the @ necessary (maybe just the @brief)
@@ -50,7 +50,7 @@ type functionName(type name_of_variable1, type name_of_variable2, type out_varia
 /*
  * fileName.extension
  *
- *  Created on: Apr 2, 2020
+ *  Created on: Month numDay, numYear
  *      Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
