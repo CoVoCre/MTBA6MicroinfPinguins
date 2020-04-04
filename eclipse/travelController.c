@@ -20,18 +20,18 @@
 
 #include <travelController.h>
 
-// From motors.h library functions need steps/s max speed 1100steps/s
-// here is max +/-126 because not much precision needed, will see what max speed
-// we want and coeff between steps/s and variable increments should be
-// and also if a linear relation is OK
+// From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
+// @warning do not set speed above MOTOR_SPEED_LIMIT - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
 #define MOT_MAX_NEEDED_SPS 500
-#define MOT_SPEED_RANGE 127
-#define MOT_STEPSPS_TO_VAR_RANGE(STEPS_S) ( ((MOT_SPEED_RANGE*STEPS_S) /MOT_MAX_NEEDED_SPS) < MOT_SPEED_RANGE ?	\
-											((MOT_SPEED_RANGE*STEPS_S) /MOT_MAX_NEEDED_SPS) : MOT_SPEED_RANGE )
+#define MAX_DISTANCE_VALUE 255 //integer value which represents the max range of prox sensor
+#define STOP_DISTANCE_VALUE 30 //distance at which robot should stop
 
-#define MOT_MAX_ANGLE_TO_CORRECT 90	// this will be the max angle in ° that the correction will still change
+#define MOT_MAX_ANGLE_TO_CORRECT 100	// this will be the max angle in ° that the correction will still change
 #define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300
-#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
+//#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
+#define MOT_KP_DIFF 1	//needs >=0 value
+#define MOT_KI_DIFF 0.5 //needs >=0 value
+#define MOT_KI_N_ANGLES 5
 
 #define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust control
 #define MOT_CONTROLLER_WORKING_AREA_SIZE 128 //128 because it should be enough !
@@ -39,9 +39,10 @@
 
 
 int16_t destAngle = 0; //from -179 to +180
-uint8_t destDistance = 0; // from 0 to 255 with 255 max range of proximity sensor
-int8_t leftMotSpeed = 0; //from -126 to +126, use MOT_STEPSPS_TO_VAR_RANGE(STEPS_S) to use steps per sec
-int8_t rightMotSpeed = 0; //from -126 to +126, use MOT_STEPSPS_TO_VAR_RANGE(STEPS_S) to use steps per sec
+int16_t lastNAngles[MOT_KI_N_ANGLES] = {0}; //set all to 0
+uint8_t destDistance = 0; // from 0 to 255 with 255 max range of proximity sensor (MAX_DISTANCE_VALUE)
+int rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
+int leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 thread_t *motCtrlThread;
 
 travCtrl_destReached destReachedFctToCall;
@@ -50,7 +51,8 @@ travCtrl_destReached destReachedFctToCall;
 /* Internal functions definitions             */
 /*===========================================================================*/
 void dirAngleCb(int16_t newDestAngle);
-
+bool proxDistanceUpdate(void);
+void motControllerUpdate(void);
 
 /*===========================================================================*/
 /* Private functions              */
@@ -60,11 +62,12 @@ void dirAngleCb(int16_t newDestAngle);
 static THD_WORKING_AREA(waMotControllerThd, MOT_CONTROLLER_WORKING_AREA_SIZE);
 /* Motor controller thread. */
 static THD_FUNCTION(MotControllerThd, arg) {
+	(void)arg; // silence warning about unused argument
     systime_t time;
     static bool motCtrShldContinue = true;
 	while (motCtrShldContinue) {
 		time = chVTGetSystemTime();
-		// should do things here or call a function that does !
+		// TODOPING should do things here or call a function that does !
 		motCtrShldContinue = proxDistanceUpdate();
 		motControllerUpdate();
 		chThdSleepUntilWindowed(time, time + MS2ST(MOT_CONTROLLER_PERIOD));
@@ -77,30 +80,62 @@ static THD_FUNCTION(MotControllerThd, arg) {
  * @return  false if destination is not reached 0, true otherwise
 */
 bool proxDistanceUpdate(void){
-	bool destNotReached = true;
-	// TODO things here
-	return destNotReached;
+	bool destIsNotReached = true;
+	// TODOPING do things here
+	return destIsNotReached;
 }
 
 /**
  * @brief   Updates the speeds of the motors based on distance and angle
 */
 void motControllerUpdate(void){
-	// TODO first speed differential based on angle
+	//TODOPING first speed differential based on angle
+	int16_t motSpeedDiff = 0;
+	int16_t sumLastNAngles = 0;
 
-	// TODO then update speed based on distance
+	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
+		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
+	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
+		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
+	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
+	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>0;i--){ //1 offset because it's an array
+		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
+		sumLastNAngles+=lastNAngles[i];
+	}
+	lastNAngles[0] = destAngle;
+	sumLastNAngles+=lastNAngles[0];
 
+	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*(sumLastNAngles);
+
+	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
+		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
+	else if( motSpeedDiff < (- MOT_MAX_DIFF_SPS_FOR_CORRECTION))
+		motSpeedDiff = (- MOT_MAX_DIFF_SPS_FOR_CORRECTION);
+
+	// TODOPING then update speed based on distance
+	int robSpeed = 0;
+	if(STOP_DISTANCE_VALUE < destDistance && destDistance < MAX_DISTANCE_VALUE)
+		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistance-STOP_DISTANCE_VALUE) )/MAX_DISTANCE_VALUE;
+	else if(destDistance == MAX_DISTANCE_VALUE)
+		robSpeed = MOT_MAX_NEEDED_SPS;
+
+	// TODOPING then actually update motor speeds
+	rightMotSpeed = robSpeed + motSpeedDiff;
+	leftMotSpeed = robSpeed - motSpeedDiff;
+	right_motor_set_speed(rightMotSpeed);
+	left_motor_set_speed(leftMotSpeed);
 }
 
-/**
- * @brief   function to be called when the destination is reached according to prox sensor
-*/
-void destinationReached(void){
-	// set termination flag to true in motCtrlThread
-	chThdTerminate(motCtrlThread);
-	chThdWait(motCtrlThread); // wait until thread has effectively stopped
-	destReachedFctToCall();
-}
+// TODOPING either delete this or change it to function for terminating the controller from outside
+///**
+// * @brief   function to be called when the destination is reached according to prox sensor
+//*/
+//void destinationReached(void){
+//	// set termination flag to true in motCtrlThread
+//	chThdTerminate(motCtrlThread);
+//	chThdWait(motCtrlThread); // wait until thread has effectively stopped
+//	destReachedFctToCall();
+//}
 
 /**
  * @brief   Callback fct given to exterior for when the angle needs updating.
@@ -133,6 +168,7 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
 /*===========================================================================*/
 /* Functions for testing              */
 /*===========================================================================*/
+// TESTPING
 //void travCtrl_testAll(void){
 //	int16_t testNewAngle = 10;
 //	//travCtrl_dirAngleCb_t updateAngleCB = travCtrl_init();
