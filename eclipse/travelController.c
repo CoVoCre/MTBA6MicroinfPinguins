@@ -16,15 +16,15 @@
 #include <ch.h> //for threads
 
 #include <motors.h>
-
+#include <sensors/VL53L0X/VL53L0X.h>
 
 #include <travelController.h>
 
 // From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
 // @warning do not set speed above MOTOR_SPEED_LIMIT - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
 #define MOT_MAX_NEEDED_SPS 500
-#define MAX_DISTANCE_VALUE 255 //integer value which represents the max range of prox sensor
-#define STOP_DISTANCE_VALUE 30 //distance at which robot should stop
+#define MAX_DISTANCE_VALUE_MM 500 //how far in mm should robot start to slow
+#define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
 
 #define MOT_MAX_ANGLE_TO_CORRECT 100	// this will be the max angle in ° that the correction will still change
 #define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300
@@ -36,14 +36,17 @@
 #define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust control
 #define MOT_CONTROLLER_WORKING_AREA_SIZE 128 //128 because it should be enough !
 
-
+#define IR_FRONT_RIGHT 0 //IR1 so sensor number 0
+#define IR_FRONT_LEFT 7 //IR8 so sensor number 7
+#define IR_CALIB_0_DISTANCE -3700 //from http://www.e-puck.org/index.php?option=com_content&view=article&id=22&Itemid=13
+#define IR_CALIB_MAX_RANGE -750 //same source, actually only somewhat linear bewteen -3700 and -1000
 
 int16_t destAngle = 0; //from -179 to +180
 int16_t lastNAngles[MOT_KI_N_ANGLES] = {0}; //set all to 0
-uint8_t destDistance = 0; // from 0 to 255 with 255 max range of proximity sensor (MAX_DISTANCE_VALUE)
+uint16_t destDistanceMM = 0;
 int rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 int leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
-thread_t *motCtrlThread;
+thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
 
 travCtrl_destReached destReachedFctToCall;
 
@@ -82,6 +85,7 @@ static THD_FUNCTION(MotControllerThd, arg) {
 bool proxDistanceUpdate(void){
 	bool destIsNotReached = true;
 	// TODOPING do things here
+	destDistanceMM = VL53L0X_get_dist_mm();
 	return destIsNotReached;
 }
 
@@ -114,9 +118,9 @@ void motControllerUpdate(void){
 
 	// TODOPING then update speed based on distance
 	int robSpeed = 0;
-	if(STOP_DISTANCE_VALUE < destDistance && destDistance < MAX_DISTANCE_VALUE)
-		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistance-STOP_DISTANCE_VALUE) )/MAX_DISTANCE_VALUE;
-	else if(destDistance == MAX_DISTANCE_VALUE)
+	if(STOP_DISTANCE_VALUE_MM < destDistanceMM && destDistanceMM < MAX_DISTANCE_VALUE_MM)
+		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/MAX_DISTANCE_VALUE_MM;
+	else if(destDistanceMM == MAX_DISTANCE_VALUE_MM)
 		robSpeed = MOT_MAX_NEEDED_SPS;
 
 	// TODOPING then actually update motor speeds
@@ -154,8 +158,10 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
 	//inits the motors
 	motors_init();
 
+	VL53L0X_start();
+
 	destAngle = 0;
-	destDistance = 0;
+	destDistanceMM = 0;
 
 	destReachedFctToCall = destReachedCallback;
 
@@ -170,7 +176,11 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
 /*===========================================================================*/
 // TESTPING
 //void travCtrl_testAll(void){
-//	int16_t testNewAngle = 10;
-//	//travCtrl_dirAngleCb_t updateAngleCB = travCtrl_init();
+//	travCtrl_dirAngleCb_t updateAngleCB = travCtrl_init();
+//	int16_t testNewAngle = 50;
+//
 //	updateAngleCB(testNewAngle);
+//
+//	chThdSleepMilliseconds(1000);
+//
 //}

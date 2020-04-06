@@ -4,11 +4,17 @@
 
 #include <main.h>
 
+
+
 //#include <travelController.h>
 
 
 int main(void)
 {
+	halInit(); //
+	chSysInit();
+
+
 //	travCtrl_testAll();
 	while(1){
 	
