@@ -19,6 +19,7 @@
 #include <sensors/VL53L0X/VL53L0X.h>
 
 #include <travelController.h>
+#include <comms.h>
 
 // From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
 // @warning do not set speed above MOTOR_SPEED_LIMIT - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
@@ -70,6 +71,8 @@ static THD_FUNCTION(MotControllerThd, arg) {
     static bool motCtrShldContinue = true;
 	while (motCtrShldContinue) {
 		time = chVTGetSystemTime();
+		//TESTPING
+		chprintf((BaseSequentialStream *)&SD3, "In mot controller thread\n\r");
 		// TODOPING should do things here or call a function that does !
 		motCtrShldContinue = proxDistanceUpdate();
 		motControllerUpdate();
@@ -110,6 +113,8 @@ void motControllerUpdate(void){
 	sumLastNAngles+=lastNAngles[0];
 
 	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*(sumLastNAngles);
+	//TESTPING
+	chprintf((BaseSequentialStream *)&SD3, "New speed diff is = %d \n\r", motSpeedDiff);
 
 	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
 		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
@@ -120,8 +125,11 @@ void motControllerUpdate(void){
 	int robSpeed = 0;
 	if(STOP_DISTANCE_VALUE_MM < destDistanceMM && destDistanceMM < MAX_DISTANCE_VALUE_MM)
 		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/MAX_DISTANCE_VALUE_MM;
-	else if(destDistanceMM == MAX_DISTANCE_VALUE_MM)
+	else if(destDistanceMM >= MAX_DISTANCE_VALUE_MM)
 		robSpeed = MOT_MAX_NEEDED_SPS;
+	//TESTPING
+	chprintf((BaseSequentialStream *)&SD3, "New rob speed is = %d \n\r", robSpeed);
+
 
 	// TODOPING then actually update motor speeds
 	rightMotSpeed = robSpeed + motSpeedDiff;
@@ -147,6 +155,9 @@ void motControllerUpdate(void){
 */
 void dirAngleCb(int16_t newDestAngle){
 	destAngle = newDestAngle;
+	//TESTPING
+	chprintf((BaseSequentialStream *)&SD3, "New dest angle is = %d \n\r", destAngle);
+
 }
 
 /*===========================================================================*/

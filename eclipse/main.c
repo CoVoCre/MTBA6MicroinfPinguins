@@ -6,18 +6,30 @@
 
 
 
-//#include <travelController.h>
+#include <travelController.h>
+#include <comms.h>
 
+
+bool destReached = false;
+
+travCtrl_dirAngleCb_t updateAngle;
+
+void destReachedCB(void){
+	destReached = true;
+}
+
+int16_t newAngle = 20;
 
 int main(void)
 {
 	halInit(); //
 	chSysInit();
 
+	updateAngle = travCtrl_init(destReachedCB);
 
 //	travCtrl_testAll();
 	while(1){
-	
+		updateAngle(newAngle);
 	}
 }
 
