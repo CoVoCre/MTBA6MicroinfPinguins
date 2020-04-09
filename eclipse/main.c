@@ -17,10 +17,12 @@
 #include <arm_math.h>
 
 //uncomment to send the FFTs results from the real microphones
-//#define SEND_FROM_MIC
+#define SEND_FROM_MIC
 
 //uncomment to use double buffering to send the FFT to the computer
 #define DOUBLE_BUFFERING
+
+#define NB_BYTE_PER_CMPX_VAL			2
 
 static void serial_start(void)
 {
@@ -68,43 +70,29 @@ int main(void)
 
     //send_tab is used to save the state of the buffer to send (double buffering)
     //to avoid modifications of the buffer while sending it
-    static float send_tab[FFT_SIZE];
 
-#ifdef SEND_FROM_MIC
+    static float mic_data_right[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
+    static float mic_data_left[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
+    static float mic_ampli_right[FFT_SIZE];
+    static float mic_ampli_left[FFT_SIZE];
+
+    /* SEND_FROM_MIC */
     //starts the microphones processing thread.
     //it calls the callback given in parameter when samples are ready
     mic_start(&processAudioData);
-#endif  /* SEND_FROM_MIC */
+
 
     /* Infinite loop. */
     while (1) {
-#ifdef SEND_FROM_MIC
+
         //waits until a result must be sent to the computer
-        wait_send_to_computer();
-#ifdef DOUBLE_BUFFERING
+    		wait_send_to_computer();
+
         //we copy the buffer to avoid conflicts
-        arm_copy_f32(get_audio_buffer_ptr(LEFT_OUTPUT), send_tab, FFT_SIZE);
-        SendFloatToComputer((BaseSequentialStream *) &SD3, send_tab, FFT_SIZE);
-#else
-        SendFloatToComputer((BaseSequentialStream *) &SD3, get_audio_buffer_ptr(LEFT_OUTPUT), FFT_SIZE);
-#endif  /* DOUBLE_BUFFERING */
-#else
+        arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+        arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
 
-        float* bufferCmplxInput = get_audio_buffer_ptr(LEFT_CMPLX_INPUT);
-        float* bufferOutput = get_audio_buffer_ptr(LEFT_OUTPUT);
-
-        uint16_t size = ReceiveInt16FromComputer((BaseSequentialStream *) &SD3, bufferCmplxInput, FFT_SIZE);
-
-        if(size == FFT_SIZE){
-
-            doFFT_optimized(FFT_SIZE, bufferCmplxInput);
-
-            arm_cmplx_mag_f32(bufferCmplxInput, bufferOutput, FFT_SIZE);
-
-            SendFloatToComputer((BaseSequentialStream *) &SD3, bufferOutput, FFT_SIZE);
-
-        }
-#endif  /* SEND_FROM_MIC */
+        audioAnalyseDirection(mic_data_left, mic_data_right, mic_ampli_left, mic_ampli_right);
     }
 }
 

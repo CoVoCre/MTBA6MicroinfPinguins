@@ -21,7 +21,17 @@ typedef enum {
 void processAudioData(int16_t *data, uint16_t num_samples);
 
 /*
-*	put the invoking thread into sleep until it can process the audio datas
+ * Determines the direction of the sound
+ */
+void audioAnalyseDirection(float *mic_data1, float *mic_data2, float *mic_ampli1, float *mic_ampli2);
+
+/*
+ * Converts the FFT value into a real frequency
+ */
+uint16_t audioConvertFreq(uint16_t freq);
+
+/*
+*	put the invoking thread into sleep until it can process the audio data
 */
 void wait_send_to_computer(void);
 
