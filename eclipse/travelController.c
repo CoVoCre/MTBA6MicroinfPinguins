@@ -35,7 +35,7 @@
 #define MOT_KI_N_ANGLES 5
 
 #define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust control
-#define MOT_CONTROLLER_WORKING_AREA_SIZE 128 //128 because it should be enough !
+#define MOT_CONTROLLER_WORKING_AREA_SIZE 1024 //128 because it should be enough !
 
 #define IR_FRONT_RIGHT 0 //IR1 so sensor number 0
 #define IR_FRONT_LEFT 7 //IR8 so sensor number 7
@@ -72,7 +72,7 @@ static THD_FUNCTION(MotControllerThd, arg) {
 	while (motCtrShldContinue) {
 		time = chVTGetSystemTime();
 		//TESTPING
-		chprintf((BaseSequentialStream *)&SD3, "In mot controller thread\n\r");
+		//chprintf((BaseSequentialStream *)&SD3, "In mot controller thread\n\r");
 		// TODOPING should do things here or call a function that does !
 		motCtrShldContinue = proxDistanceUpdate();
 		motControllerUpdate();
@@ -100,35 +100,39 @@ void motControllerUpdate(void){
 	int16_t motSpeedDiff = 0;
 	int16_t sumLastNAngles = 0;
 
-	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
-		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
-	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
-		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
-	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
-	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>0;i--){ //1 offset because it's an array
-		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
-		sumLastNAngles+=lastNAngles[i];
-	}
-	lastNAngles[0] = destAngle;
-	sumLastNAngles+=lastNAngles[0];
-
-	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*(sumLastNAngles);
-	//TESTPING
-	chprintf((BaseSequentialStream *)&SD3, "New speed diff is = %d \n\r", motSpeedDiff);
-
-	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
-		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
-	else if( motSpeedDiff < (- MOT_MAX_DIFF_SPS_FOR_CORRECTION))
-		motSpeedDiff = (- MOT_MAX_DIFF_SPS_FOR_CORRECTION);
+//	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
+//		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
+//	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
+//		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
+//	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
+//	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>0;i--){ //1 offset because it's an array
+//		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
+//		sumLastNAngles+=lastNAngles[i];
+//	}
+//	lastNAngles[0] = destAngle;
+//	sumLastNAngles+=lastNAngles[0];
+//
+//	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*(sumLastNAngles);
+//	//TESTPING
+//	//chprintf((BaseSequentialStream *)&SD3, "New speed diff is = %d \n\r", motSpeedDiff);
+//
+//	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
+//		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
+//	else if( motSpeedDiff < (- MOT_MAX_DIFF_SPS_FOR_CORRECTION))
+//		motSpeedDiff = (- MOT_MAX_DIFF_SPS_FOR_CORRECTION);
 
 	// TODOPING then update speed based on distance
 	int robSpeed = 0;
-	if(STOP_DISTANCE_VALUE_MM < destDistanceMM && destDistanceMM < MAX_DISTANCE_VALUE_MM)
-		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/MAX_DISTANCE_VALUE_MM;
-	else if(destDistanceMM >= MAX_DISTANCE_VALUE_MM)
+
+	//TODOPING need to stabilize when arriving
+	if(STOP_DISTANCE_VALUE_MM <= destDistanceMM && destDistanceMM <= MAX_DISTANCE_VALUE_MM){
+		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
+	}
+	else if(destDistanceMM > MAX_DISTANCE_VALUE_MM)
 		robSpeed = MOT_MAX_NEEDED_SPS;
+
 	//TESTPING
-	chprintf((BaseSequentialStream *)&SD3, "New rob speed is = %d \n\r", robSpeed);
+	chprintf((BaseSequentialStream *)&SD3, "New rob speed is = %d for distance = %d\n\r", robSpeed, destDistanceMM);
 
 
 	// TODOPING then actually update motor speeds

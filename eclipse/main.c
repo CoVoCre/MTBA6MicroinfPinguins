@@ -25,11 +25,16 @@ int main(void)
 	halInit(); //
 	chSysInit();
 
-	updateAngle = travCtrl_init(destReachedCB);
+	comms_start();
 
+	chprintf((BaseSequentialStream *)&SD3,"Beginning of main\n\r");
+
+	updateAngle = travCtrl_init(destReachedCB);
+	updateAngle(newAngle);
 //	travCtrl_testAll();
 	while(1){
-		updateAngle(newAngle);
+		//chprintf((BaseSequentialStream *)&SD3, "In MAIN\n\r");
+		chThdSleepMilliseconds(100);
 	}
 }
 
