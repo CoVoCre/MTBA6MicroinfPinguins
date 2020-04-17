@@ -75,15 +75,62 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
 }
 
 /**
- * @brief   read from  USB_PORT or UART_PORT a string
+ * @brief  	read from  USB_PORT or UART_PORT and store in char array
+ * @note 	this function will print back what the user enters as he enters
+ * 				so that he sees what he inputs
+ * @warning	this function is blocking for the calling thread until either
+ * 				the end char is met or the user presses enter
  *
- * @param[in] fmt       formatting string
- * param[in] string		pointer to the beggining of where characters should be stored
- * param[in] numCharsToRead		max number of chars to read
- * param[in] endChar		optionnal input character whil will end reading
+ * @param[in] in       				stream to read from
+ * @param[out] readText				pointer to char array where characters should be stored
+ * 										\0 will be put at the end of table after reading
+ * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
- *@return              Number of chars read
+ *@return	Number of chars read and stored in array (not counting \0)
  */
-//void comms_readf(BaseSequentialStream *chp, char *string, uint16_t numCharsToRead, char endChar){
-//
-//}
+uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize){
+	uint16_t numOfCharsRead = 0;
+	uint8_t readChar;
+
+	comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
+
+
+	for(uint16_t i = 0; i<arraySize-1;i++){
+		readChar = chSequentialStreamGet(in);
+		switch(readChar){
+		case '\n': //for either \n or \n end and return
+		case '\r':
+			readText[i] = '\0';
+			comms_printf(in," \n\r");
+			return numOfCharsRead = i-1;	// we do not count \0
+		case 127:
+				readText[i-1] = '\0';
+				readText[i] = '\0';
+				i-=1;
+				comms_printf(in,"\r                                                                          \r%s",readText);
+			break;
+		default:
+			readText[i] = readChar;
+			readText[i+1]= '\0';
+			comms_printf(in,"\r                                                                          \r%s",readText);
+		}
+	}
+
+	comms_printf(in," \n\r");
+	return numOfCharsRead;
+}
+
+//TESTPING
+void comms_test_test(void){
+	comms_printf(UART_PORT_STREAM, "In comms_test_test\n\r");
+	uint8_t testChar = 'T';
+	comms_printf(UART_PORT_STREAM,"First %c\n\r",testChar);
+	testChar = 'E';
+	comms_printf(UART_PORT_STREAM,"Second %c\n\r",testChar);
+	testChar = 'S';
+	chprintf(UART_PORT_STREAM,"%c ",testChar);
+	testChar = 'T';
+	chprintf(UART_PORT_STREAM,"Next %c ",testChar);
+	testChar = '\r';
+	chprintf(UART_PORT_STREAM,"%c ",testChar);
+}

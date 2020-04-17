@@ -83,16 +83,17 @@ int main(void)
 	chSysInit();
 	mpu_init();
 	//timer12_start();
+
 	comms_start();
 	chprintf(UART_PORT_STREAM,"Starting main !\n\r");
 
 	updateAngle = travCtrl_init(destReachedCB);
 
-
 	//TESTPING test travelController functions!
 	//travCtrl_testAll();
 
-    mpu_init();
+	comms_printf(UART_PORT_STREAM, "In MAIN \n\r");
+	comms_printf(UART_PORT_STREAM, "We will now ask for text. Enter anything then press enter\n\r");
 
     //send_tab is used to save the state of the buffer to send (double buffering)
     //to avoid modifications of the buffer while sending it
@@ -115,9 +116,9 @@ int main(void)
     //it calls the callback given in parameter when samples are ready
     mic_start(&processAudioData);
 
-
     /* Infinite loop. */
     while (1) {
+    	comms_printf(UART_PORT_STREAM, "Now please enter anything\n\r");
 
         /*Waits until enough samples are collected*/
     		wait_send_to_computer();
