@@ -51,6 +51,9 @@ int main(void)
 
 	comms_start();
 
+	//TESTPING test travelController functions!
+	travCtrl_testAll();
+
     mpu_init();
 
     //starts timer 12
