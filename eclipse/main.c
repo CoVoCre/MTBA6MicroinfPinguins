@@ -45,22 +45,36 @@
 
 #define NB_BYTE_PER_CMPX_VAL			2
 
+travCtrl_dirAngleCb_t updateAngle;
 
-static void timer12_start(void){
-    //General Purpose Timer configuration   
+//static void timer12_start(void){
+//    //General Purpose Timer configuration
+//
+//    //timer 12 is a 16 bit timer so we can measure time
+//    //to about 65ms with a 1Mhz counter
+//    static const GPTConfig gpt12cfg = {
+//        1000000,        /* 1MHz timer clock in order to measure uS.*/
+//        NULL,           /* Timer callback.*/
+//        0,
+//        0
+//    };
+//
+//    gptStart(&GPTD12, &gpt12cfg);
+//    //let the timer count to max value
+//    gptStartContinuous(&GPTD12, 0xFFFF);
+//}
 
-    //timer 12 is a 16 bit timer so we can measure time
-    //to about 65ms with a 1Mhz counter
-    static const GPTConfig gpt12cfg = {
-        1000000,        /* 1MHz timer clock in order to measure uS.*/
-        NULL,           /* Timer callback.*/
-        0,
-        0
-    };
+void destReachedCB(void){
+	//destReached = true;
+	chprintf(UART_PORT_STREAM,"---------------------------------------------------------------\n\r");
+	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
+	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
+	chprintf(UART_PORT_STREAM,"WARNING test_destReachedCB was called and waiting 1second\n\r");
+	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
+	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
+	chprintf(UART_PORT_STREAM,"---------------------------------------------------------------\n\r");
 
-    gptStart(&GPTD12, &gpt12cfg);
-    //let the timer count to max value
-    gptStartContinuous(&GPTD12, 0xFFFF);
+	chThdSleepMilliseconds(1000);
 }
 
 int main(void)
@@ -68,18 +82,17 @@ int main(void)
 	halInit(); //
 	chSysInit();
 	mpu_init();
-	timer12_start();
+	//timer12_start();
 	comms_start();
 	chprintf(UART_PORT_STREAM,"Starting main !\n\r");
 
+	updateAngle = travCtrl_init(destReachedCB);
+
 
 	//TESTPING test travelController functions!
-	travCtrl_testAll();
+	//travCtrl_testAll();
 
     mpu_init();
-
-    //starts timer 12
-    timer12_start();
 
     //send_tab is used to save the state of the buffer to send (double buffering)
     //to avoid modifications of the buffer while sending it
@@ -93,7 +106,7 @@ int main(void)
     static float mic_ampli_front[FFT_SIZE];
     static float mic_ampli_back[FFT_SIZE];
 
-    uint16_t source[NB_SOURCES]				= {0};
+  //  uint16_t source[NB_SOURCES]				= {0};
     int16_t arg								= 0;
     uint8_t	source_index						= 0;
 
@@ -134,9 +147,12 @@ int main(void)
 #ifdef DEBUG_MAIN
         if(arg==ERROR_AUDIO){
         		chprintf((BaseSequentialStream *)&SD3, "Error in audioAnalyseDirection\n\r\n\r");
+        		arg = 0;
+        		updateAngle(arg);
         }
         else{
-        		chprintf((BaseSequentialStream *)&SD3, "Arg : 			%d\n\r", arg);
+        		chprintf((BaseSequentialStream *)&SD3, "               Arg : 			%d\n\r", arg);
+        		updateAngle(arg);
         }
 #endif
     }

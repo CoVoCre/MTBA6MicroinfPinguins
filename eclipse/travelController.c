@@ -22,17 +22,18 @@
 #include <comms.h>
 
 // From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
-// @warning do not set speed above MOTOR_SPEED_LIMIT - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
-#define MOT_MAX_NEEDED_SPS 500
+// @warning do not set speed above MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
+#define MOT_MAX_NEEDED_SPS 300
+
 #define MAX_DISTANCE_VALUE_MM 500 //how far in mm should robot start to slow
 #define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
 #define STOP_DISTANCE_AVERAGE_N 3 //to filter too high variations
 
-#define MOT_MAX_ANGLE_TO_CORRECT 100	// this will be the max angle in ° that the correction will still change
-#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300
+#define MOT_MAX_ANGLE_TO_CORRECT 60	// this will be the max angle in ° that the correction will still change
+#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300 // must be less than MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS
 //#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
 #define MOT_KP_DIFF 1	//needs >=0 value
-#define MOT_KI_DIFF 0.5 //needs >=0 value
+#define MOT_KI_DIFF 0.1 //needs >=0 value
 #define MOT_KI_N_ANGLES 5
 #define MOT_KP_FWD 0.5 //forward speed KP needs >=0 value
 #define MOT_KI_FWD 1 //forward speed KI needs >=0 value
@@ -104,7 +105,7 @@ bool proxDistanceUpdate(void){
 	static uint8_t testFirstGistances = 0;
 	testFirstGistances++;
 	if(testFirstGistances>50 && destDistanceMM <= STOP_DISTANCE_VALUE_MM ){
-		destIsNotReached = false;
+		//destIsNotReached = false;
 		testFirstGistances = 100; //TODOPING check how to remove this magic number
 	}
 
@@ -119,21 +120,24 @@ bool proxDistanceUpdate(void){
 */
 int16_t motControllerCalculatetSpeedDiff(void){
 	int16_t motSpeedDiff = 0;
-	int16_t sumLastNAngles = 0;
+	int16_t avgLastNAngles = 0;
 
 	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
 		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
 	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
 		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
-	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
+	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum), and do average
 	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>=1;i--){ //1 offset because it's an array
 		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
-		sumLastNAngles+=lastNAngles[i];
+		avgLastNAngles+=lastNAngles[i];
 	}
 	lastNAngles[0] = destAngle;
-	sumLastNAngles+=lastNAngles[0];
+	avgLastNAngles+=lastNAngles[0];
+	avgLastNAngles = avgLastNAngles/MOT_KI_N_ANGLES;
 
-	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*sumLastNAngles;
+//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT \
+//					+ MOT_KI_DIFF* MOT_MAX_DIFF_SPS_FOR_CORRECTION * avgLastNAngles / MOT_MAX_ANGLE_TO_CORRECT;
+	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT;
 
 	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
 		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
@@ -189,8 +193,9 @@ void motControllerUpdate(void){
 	rightMotSpeed = robSpeed - motSpeedDiff;
 	leftMotSpeed = robSpeed + motSpeedDiff;
 	//TESTPING not outputting values to motors because for now need to check if it works ok
-	if(degubPrintf == true)
-		chprintf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM);
+	//if(degubPrintf == true)
+	//chprintf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM);
+
 	right_motor_set_speed(rightMotSpeed);
 	left_motor_set_speed(leftMotSpeed);
 }
@@ -202,7 +207,7 @@ void motControllerUpdate(void){
 void dirAngleCb(int16_t newDestAngle){
 	destAngle = newDestAngle;
 	//TESTPING
-	chprintf(UART_PORT_STREAM, "New dest angle is = %d \n\r", destAngle);
+	//chprintf(UART_PORT_STREAM, "New dest angle is = %d \n\r", destAngle);
 }
 
 /*===========================================================================*/
