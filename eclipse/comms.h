@@ -17,6 +17,8 @@
 
 #define USB_PORT SDU1
 #define UART_PORT SD3
+#define USB_PORT_STREAM ((BaseSequentialStream *)&USB_PORT)
+#define UART_PORT_STREAM ((BaseSequentialStream *)&UART_PORT)
 
 /**
  * @brief   starts all communication things

@@ -13,6 +13,8 @@
 #include <usbcfg.h>
 #include <chstreams.h>
 
+static bool comms_started = false;
+
 //chprintf((BaseSequentialStream *)&SD3, "%Ax=%-7d Ay=%-7d Az=%-7d Gx=%-7d Gy=%-7d Gz=%-7d\r\n",
 //                imu_values.acc_raw[X_AXIS], imu_values.acc_raw[Y_AXIS], imu_values.acc_raw[Z_AXIS],
 //                imu_values.gyro_raw[X_AXIS], imu_values.gyro_raw[Y_AXIS], imu_values.gyro_raw[Z_AXIS]);
@@ -22,17 +24,20 @@
  */
 void comms_start(void)
 {
-	static SerialConfig ser_cfg = {
-	    115200,
-	    0,
-	    0,
-	    0,
-	};
+	if(comms_started == false){
+		static SerialConfig ser_cfg = {
+			    115200,
+			    0,
+			    0,
+			    0,
+			};
 
-	//starts the serial communication on UART
-	sdStart(&UART_PORT, &ser_cfg);
-	//start the USB communication
-	usb_start();
+			//starts the serial communication on UART
+			sdStart(&UART_PORT, &ser_cfg);
+			//start the USB communication
+			usb_start();
+	}
+	comms_started = true;
 }
 
 /**

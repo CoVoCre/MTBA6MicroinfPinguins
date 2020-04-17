@@ -36,7 +36,7 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached travCtrl_destReachedCal
 /*===========================================================================*/
 /* Functions for testing              */
 /*===========================================================================*/
-//void travCtrl_testAll(void);
+void travCtrl_testAll(void);
 
 
 #endif /* TRAVELCONTROLLER_H_ */

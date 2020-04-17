@@ -26,6 +26,7 @@
 #define MOT_MAX_NEEDED_SPS 500
 #define MAX_DISTANCE_VALUE_MM 500 //how far in mm should robot start to slow
 #define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
+#define STOP_DISTANCE_AVERAGE_N 3 //to filter too high variations
 
 #define MOT_MAX_ANGLE_TO_CORRECT 100	// this will be the max angle in ° that the correction will still change
 #define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300
@@ -33,6 +34,9 @@
 #define MOT_KP_DIFF 1	//needs >=0 value
 #define MOT_KI_DIFF 0.5 //needs >=0 value
 #define MOT_KI_N_ANGLES 5
+#define MOT_KP_FWD 0.5 //forward speed KP needs >=0 value
+#define MOT_KI_FWD 1 //forward speed KI needs >=0 value
+
 
 #define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust control
 #define MOT_CONTROLLER_WORKING_AREA_SIZE 1024 //128 because it should be enough !
@@ -45,6 +49,7 @@
 int16_t destAngle = 0; //from -179 to +180
 int16_t lastNAngles[MOT_KI_N_ANGLES] = {0}; //set all to 0
 uint16_t destDistanceMM = 0;
+uint16_t lastNdestDistanceMM[STOP_DISTANCE_AVERAGE_N] = {0};
 int rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 int leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
@@ -57,6 +62,8 @@ travCtrl_destReached destReachedFctToCall;
 void dirAngleCb(int16_t newDestAngle);
 bool proxDistanceUpdate(void);
 void motControllerUpdate(void);
+int16_t motControllerCalculatetSpeedDiff(void);
+int motControllerCalculateSpeed(void);
 
 /*===========================================================================*/
 /* Private functions              */
@@ -71,13 +78,11 @@ static THD_FUNCTION(MotControllerThd, arg) {
     static bool motCtrShldContinue = true;
 	while (motCtrShldContinue) {
 		time = chVTGetSystemTime();
-		//TESTPING
-		//chprintf((BaseSequentialStream *)&SD3, "In mot controller thread\n\r");
-		// TODOPING should do things here or call a function that does !
 		motCtrShldContinue = proxDistanceUpdate();
 		motControllerUpdate();
 		chThdSleepUntilWindowed(time, time + MS2ST(MOT_CONTROLLER_PERIOD));
 	}
+	destReachedFctToCall();
 	chThdExit(true);
 }
 
@@ -87,71 +92,96 @@ static THD_FUNCTION(MotControllerThd, arg) {
 */
 bool proxDistanceUpdate(void){
 	bool destIsNotReached = true;
-	// TODOPING do things here
+
 	destDistanceMM = VL53L0X_get_dist_mm();
+
+	if(destDistanceMM<=STOP_DISTANCE_VALUE_MM){
+		destIsNotReached = false;
+	}
+
 	return destIsNotReached;
 }
 
+
 /**
- * @brief   Updates the speeds of the motors based on distance and angle
+ * @brief   Updates the speed differential of the motors based on angle
+ * @return	The calculated value for the new speed differential, in steps per second,
+ * 			between -MOT_MAX_DIFF_SPS_FOR_CORRECTION and MOT_MAX_DIFF_SPS_FOR_CORRECTION
 */
-void motControllerUpdate(void){
-	//TODOPING first speed differential based on angle
+int16_t motControllerCalculatetSpeedDiff(void){
 	int16_t motSpeedDiff = 0;
 	int16_t sumLastNAngles = 0;
 
-//	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
-//		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
-//	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
-//		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
-//	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
-//	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>0;i--){ //1 offset because it's an array
-//		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
-//		sumLastNAngles+=lastNAngles[i];
-//	}
-//	lastNAngles[0] = destAngle;
-//	sumLastNAngles+=lastNAngles[0];
-//
-//	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*(sumLastNAngles);
-//	//TESTPING
-//	//chprintf((BaseSequentialStream *)&SD3, "New speed diff is = %d \n\r", motSpeedDiff);
-//
-//	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
-//		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
-//	else if( motSpeedDiff < (- MOT_MAX_DIFF_SPS_FOR_CORRECTION))
-//		motSpeedDiff = (- MOT_MAX_DIFF_SPS_FOR_CORRECTION);
+	if(destAngle > MOT_MAX_ANGLE_TO_CORRECT)
+		destAngle = MOT_MAX_ANGLE_TO_CORRECT;
+	else if(destAngle < (- MOT_MAX_ANGLE_TO_CORRECT) )
+		destAngle = (- MOT_MAX_ANGLE_TO_CORRECT);
+	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum
+	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>=1;i--){ //1 offset because it's an array
+		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
+		sumLastNAngles+=lastNAngles[i];
+	}
+	lastNAngles[0] = destAngle;
+	sumLastNAngles+=lastNAngles[0];
 
-	// TODOPING then update speed based on distance
-	int robSpeed = 0;
+	motSpeedDiff = MOT_KP_DIFF*destAngle + MOT_KI_DIFF*sumLastNAngles;
 
-	//TODOPING need to stabilize when arriving
+	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION)
+		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
+	else if( motSpeedDiff < (- MOT_MAX_DIFF_SPS_FOR_CORRECTION))
+		motSpeedDiff = (- MOT_MAX_DIFF_SPS_FOR_CORRECTION);
+
+	return motSpeedDiff;
+}
+
+/**
+ * @brief   Updates the speed for both motors based on distance
+ * @return 	The calculated speed for the motors in steps per second, between 0 and MOT_MAX_NEEDED_SPS
+*/
+int motControllerCalculateSpeed(void){
+	int robSpeed = 0; //TODOPING why int and not uint16_t here ?
+
+	// first : filter distances using KP KI controller
+	uint16_t sumLastNdestDistanceMM = 0;
+	// ---- shift last N distances in array
+	for(uint8_t i = STOP_DISTANCE_AVERAGE_N - 1; i>=1;i--){ //1 offset because it's an array
+		lastNdestDistanceMM[i] = lastNdestDistanceMM[i-1]; // shift all angles (discard oldest one)
+		sumLastNdestDistanceMM+=lastNdestDistanceMM[i];
+		}
+	lastNdestDistanceMM[0] = destDistanceMM;
+	sumLastNdestDistanceMM+=lastNdestDistanceMM[0];
+
+	// -- Calculate filtered destDistanceMM value
+	destDistanceMM = MOT_KP_FWD*destDistanceMM + MOT_KI_FWD*sumLastNdestDistanceMM;
+
+	// if in controller bounds, then calculate robSpeed with parameters
 	if(STOP_DISTANCE_VALUE_MM <= destDistanceMM && destDistanceMM <= MAX_DISTANCE_VALUE_MM){
 		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
 	}
 	else if(destDistanceMM > MAX_DISTANCE_VALUE_MM)
 		robSpeed = MOT_MAX_NEEDED_SPS;
 
-	//TESTPING
-	chprintf((BaseSequentialStream *)&SD3, "New rob speed is = %d for distance = %d\n\r", robSpeed, destDistanceMM);
-
-
-	// TODOPING then actually update motor speeds
-	rightMotSpeed = robSpeed + motSpeedDiff;
-	leftMotSpeed = robSpeed - motSpeedDiff;
-	right_motor_set_speed(rightMotSpeed);
-	left_motor_set_speed(leftMotSpeed);
+	return robSpeed;
 }
 
-// TODOPING either delete this or change it to function for terminating the controller from outside
-///**
-// * @brief   function to be called when the destination is reached according to prox sensor
-//*/
-//void destinationReached(void){
-//	// set termination flag to true in motCtrlThread
-//	chThdTerminate(motCtrlThread);
-//	chThdWait(motCtrlThread); // wait until thread has effectively stopped
-//	destReachedFctToCall();
-//}
+/**
+ * @brief   Updates the speeds of the motors based on distance and angle
+*/
+void motControllerUpdate(void){
+	//First : control speed differential based on angle
+	int16_t motSpeedDiff = motControllerCalculatetSpeedDiff();
+
+	// Then update speed based on distance
+	uint16_t robSpeed = motControllerCalculateSpeed();
+
+	// Then actually update motor speeds
+	rightMotSpeed = robSpeed + motSpeedDiff;
+	leftMotSpeed = robSpeed - motSpeedDiff;
+	//TESTPING not outputting values to motors because for now need to check if it works ok
+	chprintf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM);
+//	right_motor_set_speed(rightMotSpeed);
+//	left_motor_set_speed(leftMotSpeed);
+}
 
 /**
  * @brief   Callback fct given to exterior for when the angle needs updating.
@@ -160,8 +190,7 @@ void motControllerUpdate(void){
 void dirAngleCb(int16_t newDestAngle){
 	destAngle = newDestAngle;
 	//TESTPING
-	chprintf((BaseSequentialStream *)&SD3, "New dest angle is = %d \n\r", destAngle);
-
+	chprintf(UART_PORT_STREAM, "New dest angle is = %d \n\r", destAngle);
 }
 
 /*===========================================================================*/
@@ -189,13 +218,257 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
 /*===========================================================================*/
 /* Functions for testing              */
 /*===========================================================================*/
-// TESTPING
-//void travCtrl_testAll(void){
-//	travCtrl_dirAngleCb_t updateAngleCB = travCtrl_init();
-//	int16_t testNewAngle = 50;
-//
-//	updateAngleCB(testNewAngle);
-//
-//	chThdSleepMilliseconds(1000);
-//
-//}
+/* TESTPING
+* before calling this, need to do
+* halInit();
+* chSysInit();
+*/
+
+bool test_destReached = false;
+
+void test_destReachedCB(void){
+	test_destReached = true;
+	chprintf(UART_PORT_STREAM,"test_destReachedCB was called and waiting 1second\n\r");
+	chThdSleepMilliseconds(1000);
+}
+
+void travCtrl_testAll(void){
+	chprintf(UART_PORT_STREAM,"Beginning of travCtrl_testAll\n\r");
+
+	travCtrl_dirAngleCb_t updateAngle;
+
+	comms_start();
+	chprintf(UART_PORT_STREAM,"Starter comms and waiting 1second\n\r");
+	chThdSleepMilliseconds(1000);
+
+	updateAngle = travCtrl_init(test_destReachedCB);
+	chprintf(UART_PORT_STREAM,"Starter controller, so distance is now active, and waiting 10seconds to test forward\n\r");
+	chThdSleepMilliseconds(10000);
+
+	chprintf(UART_PORT_STREAM,"Will now give 90° angle to controller for 5 seconds\n\r");
+	updateAngle(90);
+	chThdSleepMilliseconds(5000);
+
+	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
+	updateAngle(0);
+	chThdSleepMilliseconds(5000);
+
+	chprintf(UART_PORT_STREAM,"Will now give -90° angle to controller for 5 seconds\n\r");
+	updateAngle(-90);
+	chThdSleepMilliseconds(5000);
+
+	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
+	updateAngle(0);
+	chThdSleepMilliseconds(5000);
+
+// Now rapid positive angle tests, 4x for simulating rapid updating of sound direction
+	chprintf(UART_PORT_STREAM,"Will now give 10°, 20, 50, 90, 150, 100, 0 angle to controller for 500ms each\n\r");
+	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
+	updateAngle(10);
+	chThdSleepMilliseconds(10);
+	updateAngle(10);
+	chThdSleepMilliseconds(10);
+	updateAngle(10);
+	chThdSleepMilliseconds(10);
+	updateAngle(10);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(20);
+	chThdSleepMilliseconds(10);
+	updateAngle(20);
+	chThdSleepMilliseconds(10);
+	updateAngle(20);
+	chThdSleepMilliseconds(10);
+	updateAngle(20);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(50);
+	chThdSleepMilliseconds(10);
+	updateAngle(50);
+	chThdSleepMilliseconds(10);
+	updateAngle(50);
+	chThdSleepMilliseconds(10);
+	updateAngle(50);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(90);
+	chThdSleepMilliseconds(10);
+	updateAngle(90);
+	chThdSleepMilliseconds(10);
+	updateAngle(90);
+	chThdSleepMilliseconds(10);
+	updateAngle(90);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(150);
+	chThdSleepMilliseconds(10);
+	updateAngle(150);
+	chThdSleepMilliseconds(10);
+	updateAngle(150);
+	chThdSleepMilliseconds(10);
+	updateAngle(150);
+	chThdSleepMilliseconds(500);
+	updateAngle(100);
+	chThdSleepMilliseconds(10);
+	updateAngle(100);
+	chThdSleepMilliseconds(10);
+	updateAngle(100);
+	chThdSleepMilliseconds(10);
+	updateAngle(100);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(0);
+	chThdSleepMilliseconds(10);
+	updateAngle(0);
+	chThdSleepMilliseconds(10);
+	updateAngle(0);
+	chThdSleepMilliseconds(10);
+	updateAngle(0);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(1000);
+
+	// Now rapid tests
+	chprintf(UART_PORT_STREAM,"Will now give -10°, -20, -50, -90, -150, -100, 0 angle to controller for 500ms each\n\r");
+	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
+	updateAngle(-10);
+	chThdSleepMilliseconds(10);
+	updateAngle(-10);
+	chThdSleepMilliseconds(10);
+	updateAngle(-10);
+	chThdSleepMilliseconds(10);
+	updateAngle(-10);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(-20);
+	chThdSleepMilliseconds(10);
+	updateAngle(-20);
+	chThdSleepMilliseconds(10);
+	updateAngle(-20);
+	chThdSleepMilliseconds(10);
+	updateAngle(-20);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(-90);
+	chThdSleepMilliseconds(10);
+	updateAngle(-90);
+	chThdSleepMilliseconds(10);
+	updateAngle(-90);
+	chThdSleepMilliseconds(10);
+	updateAngle(-90);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(-150);
+	chThdSleepMilliseconds(10);
+	updateAngle(-150);
+	chThdSleepMilliseconds(10);
+	updateAngle(-150);
+	chThdSleepMilliseconds(10);
+	updateAngle(-150);
+	chThdSleepMilliseconds(500);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(500);
+	updateAngle(-0);
+	chThdSleepMilliseconds(10);
+	updateAngle(-0);
+	chThdSleepMilliseconds(10);
+	updateAngle(-0);
+	chThdSleepMilliseconds(10);
+	updateAngle(-0);
+	chThdSleepMilliseconds(10);
+	chThdSleepMilliseconds(1000);
+
+
+	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
+	updateAngle(0);
+	chThdSleepMilliseconds(5000);
+
+	// Now rapid crazy angles test
+	chprintf(UART_PORT_STREAM,"Will now give random angles for 10ms each\n\r");
+	updateAngle(1);
+	chThdSleepMilliseconds(10);
+	updateAngle(-1);
+	chThdSleepMilliseconds(10);
+	updateAngle(-5);
+	chThdSleepMilliseconds(10);
+	updateAngle(5);
+	chThdSleepMilliseconds(200);
+	updateAngle(10);
+	chThdSleepMilliseconds(10);
+	updateAngle(-20);
+	chThdSleepMilliseconds(10);
+	updateAngle(20);
+	chThdSleepMilliseconds(10);
+	updateAngle(-23);
+	chThdSleepMilliseconds(200);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	updateAngle(-150);
+	chThdSleepMilliseconds(10);
+	updateAngle(-159);
+	chThdSleepMilliseconds(10);
+	updateAngle(-90);
+	chThdSleepMilliseconds(10);
+	updateAngle(-99);
+	chThdSleepMilliseconds(10);
+	updateAngle(99);
+	chThdSleepMilliseconds(10);
+	updateAngle(130);
+	chThdSleepMilliseconds(20);
+	updateAngle(179);
+	chThdSleepMilliseconds(10);
+	updateAngle(160);
+	chThdSleepMilliseconds(10);
+	updateAngle(100);
+	chThdSleepMilliseconds(10);
+	updateAngle(20);
+	chThdSleepMilliseconds(20);
+	updateAngle(-50);
+	chThdSleepMilliseconds(10);
+	updateAngle(-100);
+	chThdSleepMilliseconds(10);
+	updateAngle(-110);
+	chThdSleepMilliseconds(10);
+	updateAngle(-120);
+	chThdSleepMilliseconds(20);
+	updateAngle(-150);
+	chThdSleepMilliseconds(10);
+	updateAngle(-160);
+	chThdSleepMilliseconds(10);
+	updateAngle(-79);
+	chThdSleepMilliseconds(10);
+	updateAngle(-179);
+	chThdSleepMilliseconds(10);
+	updateAngle(-178);
+	chThdSleepMilliseconds(30);
+	updateAngle(-177);
+	chThdSleepMilliseconds(10);
+	updateAngle(-160);
+	chThdSleepMilliseconds(10);
+	updateAngle(-179);
+	chThdSleepMilliseconds(1000);
+	chprintf(UART_PORT_STREAM,"Angle is back to 0 for 5 seconds\n\r");
+	updateAngle(0);
+	chThdSleepMilliseconds(5000);
+
+	chprintf(UART_PORT_STREAM,"End of travCtrl_testAll\n\r");
+	chThdSleepMilliseconds(1000);
+
+}
