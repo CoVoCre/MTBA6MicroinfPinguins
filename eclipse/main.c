@@ -16,6 +16,9 @@
 #include <communications.h>
 #include <arm_math.h>
 
+/*Enable for Debugging main*/
+#define DEBUG_MAIN
+
 //uncomment to send the FFTs results from the real microphones
 #define SEND_FROM_MIC
 
@@ -73,8 +76,16 @@ int main(void)
 
     static float mic_data_right[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
     static float mic_data_left[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
+    static float mic_data_front[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
+    static float mic_data_back[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
     static float mic_ampli_right[FFT_SIZE];
     static float mic_ampli_left[FFT_SIZE];
+    static float mic_ampli_front[FFT_SIZE];
+    static float mic_ampli_back[FFT_SIZE];
+
+    uint16_t source[NB_SOURCES]				= {0};
+    int16_t arg								= 0;
+    uint8_t	source_index						= 0;
 
     /* SEND_FROM_MIC */
     //starts the microphones processing thread.
@@ -85,14 +96,39 @@ int main(void)
     /* Infinite loop. */
     while (1) {
 
-        //waits until a result must be sent to the computer
+        /*Waits until enough samples are collected*/
     		wait_send_to_computer();
 
-        //we copy the buffer to avoid conflicts
+        /*Copy buffer to avoid conflicts*/
         arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
         arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+        arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+        arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
 
-        audioAnalyseDirection(mic_data_left, mic_data_right, mic_ampli_left, mic_ampli_right);
+        /*Determines peak freq of all sources*/
+        //audioDetermineSource(mic_data_left, mic_ampli_left, source);
+#ifdef DEBUG_MAIN
+        /*for(uint8_t source_index=ZERO; source_index<NB_SOURCES; source_index++){
+			if(source[source_index]==ERROR_AUDIO){
+					chprintf((BaseSequentialStream *)&SD3, "Error in audioDetermineSource\n\r\n\r");
+			}
+			else{
+					chprintf((BaseSequentialStream *)&SD3, "Source %d : 			%d\n\r", arg);
+			}
+        }*/
+#endif
+
+        /*Calculates angle of sound direction*/
+        arg = audioAnalyseDirection(mic_data_left, mic_data_right, mic_data_back, mic_data_front,
+    		   	   	   	   	   	   	   mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front, source_index);
+#ifdef DEBUG_MAIN
+        if(arg==ERROR_AUDIO){
+        		chprintf((BaseSequentialStream *)&SD3, "Error in audioAnalyseDirection\n\r\n\r");
+        }
+        else{
+        		chprintf((BaseSequentialStream *)&SD3, "Arg : 			%d\n\r", arg);
+        }
+#endif
     }
 }
 
