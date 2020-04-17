@@ -84,28 +84,53 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
  * @param[in] in       				stream to read from
  * @param[out] readText				pointer to char array where characters should be stored
  * 										\0 will be put at the end of table after reading
- * @param[in] maxNumCharsToRead		max number of chars to read, needs to be smaller
- * 										than readText array -1 for \0 en character
+ * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t maxNumCharsToRead){
+uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize){
 	uint16_t numOfCharsRead = 0;
 	uint8_t readChar;
 
-	for(uint16_t i = 0; i<maxNumCharsToRead;i++){
+	comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
+
+
+	for(uint16_t i = 0; i<arraySize-1;i++){
 		readChar = chSequentialStreamGet(in);
 		switch(readChar){
 		case '\n': //for either \n or \n end and return
 		case '\r':
 			readText[i] = '\0';
-			comms_printf((BaseSequentialStream *)&in,"\n\r");
+			comms_printf(in," \n\r");
 			return numOfCharsRead = i-1;	// we do not count \0
+		case 127:
+				readText[i-1] = '\0';
+				readText[i] = '\0';
+				i-=1;
+				comms_printf(in,"\r                                                                          \r%s",readText);
+			break;
 		default:
 			readText[i] = readChar;
+			readText[i+1]= '\0';
+			comms_printf(in,"\r                                                                          \r%s",readText);
 		}
 	}
 
-	readText[maxNumCharsToRead] = '\0';
+	comms_printf(in," \n\r");
 	return numOfCharsRead;
+}
+
+//TESTPING
+void comms_test_test(void){
+	comms_printf(UART_PORT_STREAM, "In comms_test_test\n\r");
+	uint8_t testChar = 'T';
+	comms_printf(UART_PORT_STREAM,"First %c\n\r",testChar);
+	testChar = 'E';
+	comms_printf(UART_PORT_STREAM,"Second %c\n\r",testChar);
+	testChar = 'S';
+	chprintf(UART_PORT_STREAM,"%c ",testChar);
+	testChar = 'T';
+	chprintf(UART_PORT_STREAM,"Next %c ",testChar);
+	testChar = '\r';
+	chprintf(UART_PORT_STREAM,"%c ",testChar);
 }

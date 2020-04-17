@@ -48,42 +48,27 @@ int main(void)
 {
 	halInit(); //
 	chSysInit();
+	mpu_init();
 
 	comms_start();
 
-	//TESTPING test travelController functions!
-	travCtrl_testAll();
+	//chThdSleepMilliseconds(100);
 
-    mpu_init();
+	comms_printf(UART_PORT_STREAM, "In MAIN \n\r");
+	comms_printf(UART_PORT_STREAM, "We will now ask for text. Enter anything then press enter\n\r");
 
-    //starts timer 12
-    timer12_start();
+	uint8_t textByUser[100] = "Default string";
 
-    //send_tab is used to save the state of the buffer to send (double buffering)
-    //to avoid modifications of the buffer while sending it
-
-    static float mic_data_right[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
-    static float mic_data_left[NB_BYTE_PER_CMPX_VAL*FFT_SIZE];
-    static float mic_ampli_right[FFT_SIZE];
-    static float mic_ampli_left[FFT_SIZE];
-
-    /* SEND_FROM_MIC */
-    //starts the microphones processing thread.
-    //it calls the callback given in parameter when samples are ready
-    mic_start(&processAudioData);
-
+	comms_printf(UART_PORT_STREAM, "  the default string is : %s \n\r", textByUser);
 
     /* Infinite loop. */
     while (1) {
+    	comms_printf(UART_PORT_STREAM, "Now please enter anything\n\r");
 
-        //waits until a result must be sent to the computer
-    		wait_send_to_computer();
+    	comms_readf(UART_PORT_STREAM, textByUser, 100 );
 
-        //we copy the buffer to avoid conflicts
-        arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
-        arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
-
-        audioAnalyseDirection(mic_data_left, mic_data_right, mic_ampli_left, mic_ampli_right);
+    	comms_printf(UART_PORT_STREAM, "The text you just entered : %s\n\r", textByUser);
+    	comms_printf(UART_PORT_STREAM, " \n\r");
     }
 }
 

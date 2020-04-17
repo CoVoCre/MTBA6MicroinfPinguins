@@ -52,18 +52,23 @@ void comms_start(void);
 int comms_printf(BaseSequentialStream *chp, const char *fmt, ...);
 
 /**
- * @brief   read from  USB_PORT or UART_PORT and store in char array
+ * @brief  	read from  USB_PORT or UART_PORT and store in char array
  * @note 	this function will print back what the user enters as he enters
  * 				so that he sees what he inputs
  * @warning	this function is blocking for the calling thread until either
  * 				the end char is met or the user presses enter
  *
- * @param[in] in       stream to read from
- * @param[out] readText		pointer to char array where characters should be stored
- * @param[in] maxNumCharsToRead		max number of chars to read, needs to be smaller than readText array
+ * @param[in] in       				stream to read from
+ * @param[out] readText				pointer to char array where characters should be stored
+ * 										\0 will be put at the end of table after reading
+ * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
- *@return              Number of chars read
+ *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t maxNumCharsToRead);
+uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize);
+
+//TESTPING
+void comms_test_test(void);
+
 
 #endif /* COMMS_H_ */
