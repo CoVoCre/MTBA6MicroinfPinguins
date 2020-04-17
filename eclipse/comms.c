@@ -75,15 +75,37 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
 }
 
 /**
- * @brief   read from  USB_PORT or UART_PORT a string
+ * @brief  	read from  USB_PORT or UART_PORT and store in char array
+ * @note 	this function will print back what the user enters as he enters
+ * 				so that he sees what he inputs
+ * @warning	this function is blocking for the calling thread until either
+ * 				the end char is met or the user presses enter
  *
- * @param[in] fmt       formatting string
- * param[in] string		pointer to the beggining of where characters should be stored
- * param[in] numCharsToRead		max number of chars to read
- * param[in] endChar		optionnal input character whil will end reading
+ * @param[in] in       				stream to read from
+ * @param[out] readText				pointer to char array where characters should be stored
+ * 										\0 will be put at the end of table after reading
+ * @param[in] maxNumCharsToRead		max number of chars to read, needs to be smaller
+ * 										than readText array -1 for \0 en character
  *
- *@return              Number of chars read
+ *@return	Number of chars read and stored in array (not counting \0)
  */
-//void comms_readf(BaseSequentialStream *chp, char *string, uint16_t numCharsToRead, char endChar){
-//
-//}
+uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t maxNumCharsToRead){
+	uint16_t numOfCharsRead = 0;
+	uint8_t readChar;
+
+	for(uint16_t i = 0; i<maxNumCharsToRead;i++){
+		readChar = chSequentialStreamGet(in);
+		switch(readChar){
+		case '\n': //for either \n or \n end and return
+		case '\r':
+			readText[i] = '\0';
+			comms_printf((BaseSequentialStream *)&in,"\n\r");
+			return numOfCharsRead = i-1;	// we do not count \0
+		default:
+			readText[i] = readChar;
+		}
+	}
+
+	readText[maxNumCharsToRead] = '\0';
+	return numOfCharsRead;
+}
