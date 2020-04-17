@@ -54,6 +54,9 @@ int rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 int leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
 
+//TESTPING
+bool degubPrintf = true;
+
 travCtrl_destReached destReachedFctToCall;
 
 /*===========================================================================*/
@@ -83,6 +86,8 @@ static THD_FUNCTION(MotControllerThd, arg) {
 		chThdSleepUntilWindowed(time, time + MS2ST(MOT_CONTROLLER_PERIOD));
 	}
 	destReachedFctToCall();
+	right_motor_set_speed(0);
+	left_motor_set_speed(0);
 	chThdExit(true);
 }
 
@@ -95,8 +100,12 @@ bool proxDistanceUpdate(void){
 
 	destDistanceMM = VL53L0X_get_dist_mm();
 
-	if(destDistanceMM<=STOP_DISTANCE_VALUE_MM){
+	//TODOPING first times gestDist is calledd returns 0 apparantly so filter those first...
+	static uint8_t testFirstGistances = 0;
+	testFirstGistances++;
+	if(testFirstGistances>50 && destDistanceMM <= STOP_DISTANCE_VALUE_MM ){
 		destIsNotReached = false;
+		testFirstGistances = 100; //TODOPING check how to remove this magic number
 	}
 
 	return destIsNotReached;
@@ -157,6 +166,8 @@ int motControllerCalculateSpeed(void){
 	// if in controller bounds, then calculate robSpeed with parameters
 	if(STOP_DISTANCE_VALUE_MM <= destDistanceMM && destDistanceMM <= MAX_DISTANCE_VALUE_MM){
 		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
+		if(robSpeed<150)	//TESTPING weird here...
+			robSpeed = 150;
 	}
 	else if(destDistanceMM > MAX_DISTANCE_VALUE_MM)
 		robSpeed = MOT_MAX_NEEDED_SPS;
@@ -175,12 +186,13 @@ void motControllerUpdate(void){
 	uint16_t robSpeed = motControllerCalculateSpeed();
 
 	// Then actually update motor speeds
-	rightMotSpeed = robSpeed + motSpeedDiff;
-	leftMotSpeed = robSpeed - motSpeedDiff;
+	rightMotSpeed = robSpeed - motSpeedDiff;
+	leftMotSpeed = robSpeed + motSpeedDiff;
 	//TESTPING not outputting values to motors because for now need to check if it works ok
-	chprintf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM);
-//	right_motor_set_speed(rightMotSpeed);
-//	left_motor_set_speed(leftMotSpeed);
+	if(degubPrintf == true)
+		chprintf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM);
+	right_motor_set_speed(rightMotSpeed);
+	left_motor_set_speed(leftMotSpeed);
 }
 
 /**
@@ -228,7 +240,7 @@ bool test_destReached = false;
 
 void test_destReachedCB(void){
 	test_destReached = true;
-	chprintf(UART_PORT_STREAM,"test_destReachedCB was called and waiting 1second\n\r");
+	chprintf(UART_PORT_STREAM,"WARNING test_destReachedCB was called and waiting 1second -----------------    ------  \n\r");
 	chThdSleepMilliseconds(1000);
 }
 
@@ -238,32 +250,63 @@ void travCtrl_testAll(void){
 	travCtrl_dirAngleCb_t updateAngle;
 
 	comms_start();
-	chprintf(UART_PORT_STREAM,"Starter comms and waiting 1second\n\r");
+	chprintf(UART_PORT_STREAM,"Started comms and waiting 1second\n\r");
 	chThdSleepMilliseconds(1000);
 
+	chprintf(UART_PORT_STREAM,"Starting controller so distance is now active and waiting 10seconds to test forward\n\r");
+	degubPrintf=false;
+	chThdSleepMilliseconds(3000);
+	degubPrintf=true;
 	updateAngle = travCtrl_init(test_destReachedCB);
-	chprintf(UART_PORT_STREAM,"Starter controller, so distance is now active, and waiting 10seconds to test forward\n\r");
+//	right_motor_set_speed(150);
+//	left_motor_set_speed(150);
 	chThdSleepMilliseconds(10000);
+	degubPrintf=false;
+
+
+	chprintf(UART_PORT_STREAM,"Put angle back to 70 for 5 seconds\n\r");
+	degubPrintf=false;
+	chThdSleepMilliseconds(5000);
+	degubPrintf=true;
+	updateAngle(70);
+	chThdSleepMilliseconds(5000);
+	degubPrintf=false;
+
+	chprintf(UART_PORT_STREAM,"Put angle back to 110 for 5 seconds\n\r");
+	degubPrintf=false;
+	chThdSleepMilliseconds(5000);
+	degubPrintf=true;
+	updateAngle(110);
+	chThdSleepMilliseconds(5000);
+	degubPrintf=false;
 
 	chprintf(UART_PORT_STREAM,"Will now give 90° angle to controller for 5 seconds\n\r");
+	degubPrintf=false;
+	chThdSleepMilliseconds(5000);
+	degubPrintf=true;
 	updateAngle(90);
 	chThdSleepMilliseconds(5000);
+	degubPrintf=false;
 
 	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
+	degubPrintf=false;
+	chThdSleepMilliseconds(5000);
+	degubPrintf=true;
 	updateAngle(0);
 	chThdSleepMilliseconds(5000);
+	degubPrintf=false;
 
 	chprintf(UART_PORT_STREAM,"Will now give -90° angle to controller for 5 seconds\n\r");
-	updateAngle(-90);
+	degubPrintf=false;
 	chThdSleepMilliseconds(5000);
-
-	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
-	updateAngle(0);
+	degubPrintf=true;
+	updateAngle(-90);
 	chThdSleepMilliseconds(5000);
 
 // Now rapid positive angle tests, 4x for simulating rapid updating of sound direction
 	chprintf(UART_PORT_STREAM,"Will now give 10°, 20, 50, 90, 150, 100, 0 angle to controller for 500ms each\n\r");
 	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
+	chThdSleepMilliseconds(1000);
 	updateAngle(10);
 	chThdSleepMilliseconds(10);
 	updateAngle(10);
@@ -330,6 +373,7 @@ void travCtrl_testAll(void){
 	// Now rapid tests
 	chprintf(UART_PORT_STREAM,"Will now give -10°, -20, -50, -90, -150, -100, 0 angle to controller for 500ms each\n\r");
 	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
+	chThdSleepMilliseconds(1000);
 	updateAngle(-10);
 	chThdSleepMilliseconds(10);
 	updateAngle(-10);
@@ -395,11 +439,13 @@ void travCtrl_testAll(void){
 
 
 	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
+	chThdSleepMilliseconds(1000);
 	updateAngle(0);
 	chThdSleepMilliseconds(5000);
 
 	// Now rapid crazy angles test
 	chprintf(UART_PORT_STREAM,"Will now give random angles for 10ms each\n\r");
+	chThdSleepMilliseconds(1000);
 	updateAngle(1);
 	chThdSleepMilliseconds(10);
 	updateAngle(-1);
@@ -465,6 +511,7 @@ void travCtrl_testAll(void){
 	updateAngle(-179);
 	chThdSleepMilliseconds(1000);
 	chprintf(UART_PORT_STREAM,"Angle is back to 0 for 5 seconds\n\r");
+	chThdSleepMilliseconds(1000);
 	updateAngle(0);
 	chThdSleepMilliseconds(5000);
 
