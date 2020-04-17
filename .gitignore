@@ -5,6 +5,8 @@
 lib
 eclipse/build
 eclipse/.dep
+eclipse/.project
+eclipse/pinguins.launch
 
 
 # Logs #
