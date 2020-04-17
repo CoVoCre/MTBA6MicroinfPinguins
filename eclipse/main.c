@@ -10,6 +10,22 @@
 #include <motors.h>
 #include <audio/microphone.h>
 
+<<<<<<< HEAD
+=======
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ch.h"
+#include "hal.h"
+#include "memory_protection.h"
+#include <usbcfg.h>
+#include <main.h>
+#include <chprintf.h>
+#include <motors.h>
+#include <audio/microphone.h>
+
+>>>>>>> testController
 #include <audio_processing.h>
 #include <fft.h>
 #include <arm_math.h>
@@ -19,6 +35,7 @@
 #include <travelController.h>
 #include <comms.h>
 
+<<<<<<< HEAD
 //uncomment to send the FFTs results from the real microphones
 #define SEND_FROM_MIC
 
@@ -30,6 +47,10 @@
 
 static void timer12_start(void){
     //General Purpose Timer configuration   
+=======
+static void timer12_start(void){
+    //General Purpose Timer configuration
+>>>>>>> testController
     //timer 12 is a 16 bit timer so we can measure time
     //to about 65ms with a 1Mhz counter
     static const GPTConfig gpt12cfg = {
@@ -48,8 +69,19 @@ int main(void)
 {
 	halInit(); //
 	chSysInit();
-
+	mpu_init();
+	timer12_start();
 	comms_start();
+	chprintf(UART_PORT_STREAM,"Starting main !\n\r");
+
+<<<<<<< HEAD
+	comms_start();
+=======
+//	motors_init();
+//	chThdSleepMilliseconds(100);
+//	right_motor_set_speed(200);
+//	left_motor_set_speed(200);
+>>>>>>> testController
 
 	//TESTPING test travelController functions!
 	travCtrl_testAll();
