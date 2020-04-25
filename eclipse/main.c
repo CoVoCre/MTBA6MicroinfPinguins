@@ -64,6 +64,11 @@ travCtrl_dirAngleCb_t updateAngle;
 //    gptStartContinuous(&GPTD12, 0xFFFF);
 //}
 
+/* Time testing :
+ * systime_t time = chVTGetSystemTime();
+ *  printf("It took %d", ST2MS(time-chVTGetSystemTime() ));
+ *
+ */
 void destReachedCB(void){
 	//destReached = true;
 	chprintf(UART_PORT_STREAM,"---------------------------------------------------------------\n\r");
@@ -107,9 +112,12 @@ int main(void)
     static float mic_ampli_front[FFT_SIZE];
     static float mic_ampli_back[FFT_SIZE];
 
-  //  uint16_t source[NB_SOURCES]				= {0};
-    int16_t arg								= 0;
-    uint8_t	source_index						= 0;
+    Destination destination;
+    int16_t audio_peak			= 0;
+
+    destination.index		= UNINITIALIZED_INDEX;
+    destination.freq			= UNINITIALIZED_FREQ;
+    destination.arg			= 0;
 
     /* SEND_FROM_MIC */
     //starts the microphones processing thread.
@@ -118,7 +126,7 @@ int main(void)
 
     /* Infinite loop. */
     while (1) {
-    	comms_printf(UART_PORT_STREAM, "Now please enter anything\n\r");
+    		//comms_printf(UART_PORT_STREAM, "Now please enter anything\n\r");
 
         /*Waits until enough samples are collected*/
     		wait_send_to_computer();
@@ -129,33 +137,47 @@ int main(void)
         arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
         arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
 
-        /*Determines peak freq of all sources*/
-        //audioDetermineSource(mic_data_left, mic_ampli_left, source);
-#ifdef DEBUG_MAIN
-        /*for(uint8_t source_index=ZERO; source_index<NB_SOURCES; source_index++){
-			if(source[source_index]==ERROR_AUDIO){
-					chprintf((BaseSequentialStream *)&SD3, "Error in audioDetermineSource\n\r\n\r");
-			}
-			else{
-					chprintf((BaseSequentialStream *)&SD3, "Source %d : 			%d\n\r", arg);
-			}
-        }*/
-#endif
+        /*Calculating FFT and its amplitude*/
+        audioCalculateFFT(mic_data_left, mic_data_right, mic_data_back, mic_data_front, mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
 
-        /*Calculates angle of sound direction*/
-        arg = audioAnalyseDirection(mic_data_left, mic_data_right, mic_data_back, mic_data_front,
-    		   	   	   	   	   	   	   mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front, source_index);
+        /*Testing two sources*/
+        destination.freq=998;	//corresponding to 998=400Hz, 991=500Hz, 995=450Hz
+        audio_peak = audioPeak(mic_ampli_left, &destination);
+        if(audio_peak==ERROR_AUDIO){
 #ifdef DEBUG_MAIN
-        if(arg==ERROR_AUDIO){
-        		chprintf((BaseSequentialStream *)&SD3, "Error in audioAnalyseDirection\n\r\n\r");
-        		arg = 0;
-        		updateAngle(arg);
+        		chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioPeak\n\r\n\r");
+#endif
+        }
+        else if(audio_peak==ERROR_AUDIO_SOURCE_NOT_FOUND){
+#ifdef DEBUG_MAIN
+			chprintf((BaseSequentialStream *)&SD3, "main:	Error source not found ! \n\r\n\r");
+#endif
         }
         else{
-        		chprintf((BaseSequentialStream *)&SD3, "               Arg : 			%d\n\r", arg);
-        		updateAngle(arg);
-        }
+        		if(destination.index==UNINITIALIZED_INDEX){
+#ifdef DEBUG_MAIN
+        			chprintf((BaseSequentialStream *)&SD3, "main:	UNINITIALIZED_INDEX\n\r\n\r");
 #endif
+        		}
+        		else{
+        			destination.arg = audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, destination.index);
+            		if(destination.arg==ERROR_AUDIO){
+#ifdef DEBUG_MAIN
+            			chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioAnalyseDirection\n\r\n\r");
+#endif
+                		destination.arg = 0;
+                		updateAngle(destination.arg);
+              	}
+            		else{
+#ifdef DEBUG_MAIN
+            			chprintf((BaseSequentialStream *)&SD3, "main:	Source %d :		Freq %d	:		arg  = %d\n\r", destination.index, audioConvertFreq(destination.freq), destination.arg);
+#endif
+                		updateAngle(destination.arg);
+            		}
+        		}
+
+        }
+
     }
 }
 

@@ -7,7 +7,10 @@
 #define FFT_SIZE 						1024
 #define ERROR_AUDIO						9999						//Error number
 #define SUCCESS_AUDIO					1
-#define NB_SOURCES						1						//Number of sources
+#define ERROR_AUDIO_SOURCE_NOT_FOUND		8888
+#define NB_SOURCES_MAX					5						//Max 255 sources!
+#define UNINITIALIZED_FREQ				0
+#define UNINITIALIZED_INDEX				255
 
 typedef enum {
 	//2 times FFT_SIZE because these arrays contain complex numbers (real + imaginary)
@@ -21,6 +24,25 @@ typedef enum {
 	FRONT_OUTPUT,
 	BACK_OUTPUT
 } BUFFER_NAME_t;
+
+/*
+ * Structure for each source
+ * Freq is not in Hz!
+ */
+typedef struct Sources {
+	uint16_t freq;
+	float ampli;
+} Source;
+
+/*
+ * Structure for destination source
+ * Freq is not in Hz!
+ */
+typedef struct Destinations {
+	uint8_t index;
+	uint16_t freq;
+	int16_t arg;
+} Destination;
 
 /*
 *	Callback called when the demodulation of the four microphones is done.
@@ -37,32 +59,68 @@ typedef enum {
 void processAudioData(int16_t *data, uint16_t num_samples);
 
 /*
- * Determines the peak freq of all sources
+ * Calculates FFT and its amplitude of the for mic
+ * FFT is saved in mic_data and amplitude in mic_ampli
  */
-void audioDetermineSource(float *mic_data, float *mic_ampli, uint16_t *source);
+void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front,
+						float *mic_ampli_left, float *mic_ampli_right, float *mic_ampli_back, float *mic_ampli_front);
+
+/*
+ * Returns freq of source: source[source_index].freq
+ * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
+ */
+uint16_t audioGetSourceFreq(uint8_t source_index);
 
 /*
  * Determines the direction of the sound
  */
-int16_t audioAnalyseDirection(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_font,
-							float *mic_ampli_left, float *mic_ampli_right, float *mic_ampli_back, float *mic_ampli_front, uint8_t source_index);
+int16_t audioDetermineAngle(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front, uint8_t source_index);
 
 /*
  * Determines the phase shift
  */
-int16_t audioCalculatePhase(float *mic_data1, float *mic_data2, float *mic_ampli1, float *mic_ampli2, uint16_t *freq_index, uint8_t source_index);
+int16_t audioDeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_index);
 
 /*
  * Calculates NB_SOURCES peak values and sorts them after freq
  * Returns peak freq of source_index; source_index=ZERO: lowest_freq, source_index=NB_SOURCES-ONE: highest_freq
  */
-uint16_t audioCalculatePeak(float *mic_ampli, uint8_t source_index);
+uint16_t audioPeak(float *mic_ampli_left, Destination *destination);
 
 /*
- * Swaps elements such that array is sorted by its amplitude
- * max_ampli[0] = smallest ampli, max_ampli[NB_SOURCES-1] = biggest ampli
+ * Changing source array if necessary, array is sorted by ampli: source[0].=smallest_ampli, source[nb_sources].=biggest_ampli
  */
-void audioPeakSwap(uint8_t swaps, uint16_t *max_freq, float *max_ampli);
+int16_t audioPeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic_ampli);
+
+/*
+ * Changes source array corresponding to peak_mode and source_exchange
+ *  peak_mode=PEAK_MODE_EXCHANGE: new ampli is bigger than min one of source array
+ *  		source_exchange: indicates new position
+ *  peak_mode=PEAK_MODE_SMALLER: new ampli is smaller than all of source array
+ *  peak_mode=PEAK_MODE_REPLACE: freq_difference<FREQ_THD and one value of source array has to be replaced
+ *  		source_exchange: indicates position of replacement
+ */
+int16_t audioPeakChange(int8_t source_exchange, uint16_t freq_counter, float *mic_ampli, uint8_t peak_mode, Source *source_init, uint8_t *nb_sources_init);
+
+/*
+ * Only fct that writes into source_init array !
+ */
+int16_t audioPeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16_t freq_counter, float *mic_ampli, Source *source_init);
+
+/*
+ * Only fct that writes into global source array !
+ */
+int16_t audioPeakWriteSource(uint8_t source_counter, uint8_t writing_mode,  Source *source_init);
+
+/*
+ * Compares source_init and source_change
+ */
+uint8_t audioPeakCompareSource(Source *source_change, Source *source_init, uint8_t nb_sources_init);
+
+/*
+ * Bubblesort: max_freq[ZERO]=smallest_freq, max_freq[NB_SOURCES]=highest_freq
+ */
+int16_t audioPeakBubblesort(Source *source_init, uint8_t nb_sources_init, float *mic_ampli);
 
 /*
  * Convert angle from radian into degree
@@ -76,6 +134,7 @@ uint16_t audioConvertFreq(uint16_t freq);
 
 /*
  * Converts phase shift into angle
+ * freq is in Hz!
  */
 uint16_t audioConvertPhase(int16_t arg, uint16_t freq);
 
