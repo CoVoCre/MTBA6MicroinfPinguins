@@ -1,3 +1,13 @@
+/*
+ * audio_processing.c
+ *
+ *  Created on: Apr 5, 2020
+ *      Authors: Nicolaj Schmid & Théophane Mayaud
+ * 	Project: EPFL MT BA6 penguins epuck2 project
+ *
+ * Introduction: Provides all functions for listening to sounds, finding sources, frequencies and their direction
+ * Functions prefix for public functions in this file: audioP_
+ */
 #include <ch.h>
 #include <hal.h>
 #include <main.h>
@@ -71,17 +81,22 @@ static Source source[NB_SOURCES_MAX];
 
 static uint8_t nb_sources;
 
+/*===========================================================================*/
+/* Internal functions definitions             */
+/*===========================================================================*/
+void processAudioData(int16_t *data, uint16_t num_samples);
+
+/*===========================================================================*/
+/* Private functions              */
+/*===========================================================================*/
 /*
-*	Callback called when the demodulation of the four microphones is done.
-*	
-*	Sampling freq of mic: 16kHz
-*	Every 10ms we get 160 samples per mic
-*	Fill the samples buffers to reach 1024 samples to calculate the FFTs
+* @brief Callback for when the demodulation of the four microphones is done.
+* @note : Sampling freq of mic: 16kHz. Every 10ms we get 160 samples per mic
+*			We fill the samples buffers to reach 1024 samples to calculate the FFTs
 *
-*	Parameters :
-*	int16_t *data			Buffer containing 4 times 160 samples. the samples are sorted by mic:
-*							 [micRight1, micLeft1, micBack1, micFront1, micRight2, etc...]
-*	uint16_t num_samples		Tells how many data we get in total (should always be 640)
+* @parameter [in] data  			Buffer containing 4 times 160 samples. the samples are sorted by mic:
+*							 		[micRight1, micLeft1, micBack1, micFront1, micRight2, etc...]
+* @parameter [in] num_samples	Tells how many data we get in total (should always be 640)
 */
 void processAudioData(int16_t *data, uint16_t num_samples)
 {
@@ -108,6 +123,20 @@ void processAudioData(int16_t *data, uint16_t num_samples)
 	}
 }
 
+/*===========================================================================*/
+/* Public functions for setting/getting internal parameters             */
+/*===========================================================================*/
+void audioP_init(){
+	//starts the microphones processing thread.
+	//it calls the callback given in parameter when samples are ready
+	mic_start(&processAudioData);
+}
+
+
+
+/*===========================================================================*/
+/* TODOPING old stuff to sort through             */
+/*===========================================================================*/
 /*
  * Calculates FFT and its amplitude of the for mic
  * FFT is saved in mic_data and amplitude in mic_ampli

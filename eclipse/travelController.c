@@ -7,7 +7,7 @@
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
  * and stops when an obstacle/the objective is reached (detection with proximity sensor).
- * Functions prefix for this file: travCtrl_
+ * Functions prefix for public functions in this file: travCtrl_
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,331 +206,26 @@ void motControllerUpdate(void){
 	left_motor_set_speed(leftMotSpeed);
 }
 
-/**
- * @brief   Callback fct given to exterior for when the angle needs updating.
- * @parameter [in] newDestAngle new angle direction between -179° and 180°
-*/
-void dirAngleCb(int16_t newDestAngle){
-	destAngle = newDestAngle;
-	//TESTPING
-	//chprintf(UART_PORT_STREAM, "New dest angle is = %d \n\r", destAngle);
-}
-
 /*===========================================================================*/
 /* Public functions for setting/getting internal parameters             */
 /*===========================================================================*/
 
-travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
-	// start things, motor, proximity, thread for updating control params etc
-	//inits the motors
+void travCtrl_init(travCtrl_destReached destReachedCallback){
+	// start chibiOS modules: motor & TOF sensor
 	motors_init();
-
 	VL53L0X_start();
 
-	destAngle = 0;
-	destDistanceMM = 0;
-
+	//update file level function pointer to callback provided for when destination is reached
 	destReachedFctToCall = destReachedCallback;
 
 	//start of controller thread here
 	motCtrlThread = 	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
-
-	return &dirAngleCb;
 }
 
-void travCtrl_startStop(bool startGoing){
-	robShouldMove=startGoing;
+void travCtrl_stopMoving(){
+	robShouldMove=false;
 }
 
-/*===========================================================================*/
-/* Functions for testing              */
-/*===========================================================================*/
-/* TESTPING
-* before calling this, need to do
-* halInit();
-* chSysInit();
-*/
-
-bool test_destReached = false;
-
-void test_destReachedCB(void){
-	test_destReached = true;
-	chprintf(UART_PORT_STREAM,"WARNING test_destReachedCB was called and waiting 1second -----------------    ------  \n\r");
-	chThdSleepMilliseconds(1000);
-}
-
-void travCtrl_testAll(void){
-	chprintf(UART_PORT_STREAM,"Beginning of travCtrl_testAll\n\r");
-
-	travCtrl_dirAngleCb_t updateAngle;
-
-	comms_start();
-	chprintf(UART_PORT_STREAM,"Started comms and waiting 1second\n\r");
-	chThdSleepMilliseconds(1000);
-
-	chprintf(UART_PORT_STREAM,"Starting controller so distance is now active and waiting 10seconds to test forward\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(3000);
-	degubPrintf=true;
-	updateAngle = travCtrl_init(test_destReachedCB);
-//	right_motor_set_speed(150);
-//	left_motor_set_speed(150);
-	chThdSleepMilliseconds(10000);
-	degubPrintf=false;
-
-
-	chprintf(UART_PORT_STREAM,"Put angle back to 70 for 5 seconds\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(5000);
-	degubPrintf=true;
-	updateAngle(70);
-	chThdSleepMilliseconds(5000);
-	degubPrintf=false;
-
-	chprintf(UART_PORT_STREAM,"Put angle back to 110 for 5 seconds\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(5000);
-	degubPrintf=true;
-	updateAngle(110);
-	chThdSleepMilliseconds(5000);
-	degubPrintf=false;
-
-	chprintf(UART_PORT_STREAM,"Will now give 90° angle to controller for 5 seconds\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(5000);
-	degubPrintf=true;
-	updateAngle(90);
-	chThdSleepMilliseconds(5000);
-	degubPrintf=false;
-
-	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(5000);
-	degubPrintf=true;
-	updateAngle(0);
-	chThdSleepMilliseconds(5000);
-	degubPrintf=false;
-
-	chprintf(UART_PORT_STREAM,"Will now give -90° angle to controller for 5 seconds\n\r");
-	degubPrintf=false;
-	chThdSleepMilliseconds(5000);
-	degubPrintf=true;
-	updateAngle(-90);
-	chThdSleepMilliseconds(5000);
-
-// Now rapid positive angle tests, 4x for simulating rapid updating of sound direction
-	chprintf(UART_PORT_STREAM,"Will now give 10°, 20, 50, 90, 150, 100, 0 angle to controller for 500ms each\n\r");
-	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
-	chThdSleepMilliseconds(1000);
-	updateAngle(10);
-	chThdSleepMilliseconds(10);
-	updateAngle(10);
-	chThdSleepMilliseconds(10);
-	updateAngle(10);
-	chThdSleepMilliseconds(10);
-	updateAngle(10);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(20);
-	chThdSleepMilliseconds(10);
-	updateAngle(20);
-	chThdSleepMilliseconds(10);
-	updateAngle(20);
-	chThdSleepMilliseconds(10);
-	updateAngle(20);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(50);
-	chThdSleepMilliseconds(10);
-	updateAngle(50);
-	chThdSleepMilliseconds(10);
-	updateAngle(50);
-	chThdSleepMilliseconds(10);
-	updateAngle(50);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(90);
-	chThdSleepMilliseconds(10);
-	updateAngle(90);
-	chThdSleepMilliseconds(10);
-	updateAngle(90);
-	chThdSleepMilliseconds(10);
-	updateAngle(90);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(150);
-	chThdSleepMilliseconds(10);
-	updateAngle(150);
-	chThdSleepMilliseconds(10);
-	updateAngle(150);
-	chThdSleepMilliseconds(10);
-	updateAngle(150);
-	chThdSleepMilliseconds(500);
-	updateAngle(100);
-	chThdSleepMilliseconds(10);
-	updateAngle(100);
-	chThdSleepMilliseconds(10);
-	updateAngle(100);
-	chThdSleepMilliseconds(10);
-	updateAngle(100);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(0);
-	chThdSleepMilliseconds(10);
-	updateAngle(0);
-	chThdSleepMilliseconds(10);
-	updateAngle(0);
-	chThdSleepMilliseconds(10);
-	updateAngle(0);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(1000);
-
-	// Now rapid tests
-	chprintf(UART_PORT_STREAM,"Will now give -10°, -20, -50, -90, -150, -100, 0 angle to controller for 500ms each\n\r");
-	chprintf(UART_PORT_STREAM,"Will also give each 4x in 10ms intervals to simulate rapid sound direction updates\n\r");
-	chThdSleepMilliseconds(1000);
-	updateAngle(-10);
-	chThdSleepMilliseconds(10);
-	updateAngle(-10);
-	chThdSleepMilliseconds(10);
-	updateAngle(-10);
-	chThdSleepMilliseconds(10);
-	updateAngle(-10);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(-20);
-	chThdSleepMilliseconds(10);
-	updateAngle(-20);
-	chThdSleepMilliseconds(10);
-	updateAngle(-20);
-	chThdSleepMilliseconds(10);
-	updateAngle(-20);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(-90);
-	chThdSleepMilliseconds(10);
-	updateAngle(-90);
-	chThdSleepMilliseconds(10);
-	updateAngle(-90);
-	chThdSleepMilliseconds(10);
-	updateAngle(-90);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(-150);
-	chThdSleepMilliseconds(10);
-	updateAngle(-150);
-	chThdSleepMilliseconds(10);
-	updateAngle(-150);
-	chThdSleepMilliseconds(10);
-	updateAngle(-150);
-	chThdSleepMilliseconds(500);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(500);
-	updateAngle(-0);
-	chThdSleepMilliseconds(10);
-	updateAngle(-0);
-	chThdSleepMilliseconds(10);
-	updateAngle(-0);
-	chThdSleepMilliseconds(10);
-	updateAngle(-0);
-	chThdSleepMilliseconds(10);
-	chThdSleepMilliseconds(1000);
-
-
-	chprintf(UART_PORT_STREAM,"Put angle back to 0 for 5 seconds\n\r");
-	chThdSleepMilliseconds(1000);
-	updateAngle(0);
-	chThdSleepMilliseconds(5000);
-
-	// Now rapid crazy angles test
-	chprintf(UART_PORT_STREAM,"Will now give random angles for 10ms each\n\r");
-	chThdSleepMilliseconds(1000);
-	updateAngle(1);
-	chThdSleepMilliseconds(10);
-	updateAngle(-1);
-	chThdSleepMilliseconds(10);
-	updateAngle(-5);
-	chThdSleepMilliseconds(10);
-	updateAngle(5);
-	chThdSleepMilliseconds(200);
-	updateAngle(10);
-	chThdSleepMilliseconds(10);
-	updateAngle(-20);
-	chThdSleepMilliseconds(10);
-	updateAngle(20);
-	chThdSleepMilliseconds(10);
-	updateAngle(-23);
-	chThdSleepMilliseconds(200);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	updateAngle(-150);
-	chThdSleepMilliseconds(10);
-	updateAngle(-159);
-	chThdSleepMilliseconds(10);
-	updateAngle(-90);
-	chThdSleepMilliseconds(10);
-	updateAngle(-99);
-	chThdSleepMilliseconds(10);
-	updateAngle(99);
-	chThdSleepMilliseconds(10);
-	updateAngle(130);
-	chThdSleepMilliseconds(20);
-	updateAngle(179);
-	chThdSleepMilliseconds(10);
-	updateAngle(160);
-	chThdSleepMilliseconds(10);
-	updateAngle(100);
-	chThdSleepMilliseconds(10);
-	updateAngle(20);
-	chThdSleepMilliseconds(20);
-	updateAngle(-50);
-	chThdSleepMilliseconds(10);
-	updateAngle(-100);
-	chThdSleepMilliseconds(10);
-	updateAngle(-110);
-	chThdSleepMilliseconds(10);
-	updateAngle(-120);
-	chThdSleepMilliseconds(20);
-	updateAngle(-150);
-	chThdSleepMilliseconds(10);
-	updateAngle(-160);
-	chThdSleepMilliseconds(10);
-	updateAngle(-79);
-	chThdSleepMilliseconds(10);
-	updateAngle(-179);
-	chThdSleepMilliseconds(10);
-	updateAngle(-178);
-	chThdSleepMilliseconds(30);
-	updateAngle(-177);
-	chThdSleepMilliseconds(10);
-	updateAngle(-160);
-	chThdSleepMilliseconds(10);
-	updateAngle(-179);
-	chThdSleepMilliseconds(1000);
-	chprintf(UART_PORT_STREAM,"Angle is back to 0 for 5 seconds\n\r");
-	chThdSleepMilliseconds(1000);
-	updateAngle(0);
-	chThdSleepMilliseconds(5000);
-
-	chprintf(UART_PORT_STREAM,"End of travCtrl_testAll\n\r");
-	chThdSleepMilliseconds(1000);
-
+void travelCtrl_goToAngle(int16_t directionAngle){
+	destAngle = directionAngle;
 }

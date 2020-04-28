@@ -1,3 +1,13 @@
+/*
+ * travelController.h
+ *
+ *  Created on: April 2, 2020
+ *      Authors: Nicolaj Schmid & Théophane Mayaud
+ * 	Project: EPFL MT BA6 penguins epuck2 project
+ *
+ * Introduction: This file deals with the control of the motors from the direction to be reached,
+ * and stops when an obstacle/the objective is reached (detection with proximity sensor).
+ */
 #ifndef AUDIO_PROCESSING_H
 #define AUDIO_PROCESSING_H
 
@@ -154,5 +164,10 @@ void wait_send_to_computer(void);
 *	Returns the pointer to the BUFFER_NAME_t buffer asked
 */
 float* get_audio_buffer_ptr(BUFFER_NAME_t name);
+
+/*
+* @brief Starts the microphones thread and audio aquisition
+*/
+void audioP_init(void);
 
 #endif /* AUDIO_PROCESSING_H */

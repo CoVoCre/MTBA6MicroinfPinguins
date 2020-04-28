@@ -6,7 +6,7 @@
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Provides necessary interaction with computer for the project
- * Functions prefix for this file: comms_
+ * Functions prefix for public functions in this file: comms_
  */
 
 #include <comms.h>
