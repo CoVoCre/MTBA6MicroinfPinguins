@@ -55,6 +55,7 @@ int rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 int leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
 
+bool robShouldMove = false;
 //TESTPING
 bool degubPrintf = true;
 
@@ -79,17 +80,22 @@ static THD_WORKING_AREA(waMotControllerThd, MOT_CONTROLLER_WORKING_AREA_SIZE);
 static THD_FUNCTION(MotControllerThd, arg) {
 	(void)arg; // silence warning about unused argument
     systime_t time;
-    static bool motCtrShldContinue = true;
-	while (motCtrShldContinue) {
+	while (true) {
 		time = chVTGetSystemTime();
-		motCtrShldContinue = proxDistanceUpdate();
-		motControllerUpdate();
+		if(robShouldMove){
+			bool motCtrShldContinue = proxDistanceUpdate();
+			if(motCtrShldContinue==false){
+				robShouldMove=false;
+				right_motor_set_speed(0);
+				left_motor_set_speed(0);
+				destReachedFctToCall();
+			}
+			else{
+				motControllerUpdate();
+			}
+		}
 		chThdSleepUntilWindowed(time, time + MS2ST(MOT_CONTROLLER_PERIOD));
 	}
-	destReachedFctToCall();
-	right_motor_set_speed(0);
-	left_motor_set_speed(0);
-	chThdExit(true);
 }
 
 /**
@@ -105,7 +111,7 @@ bool proxDistanceUpdate(void){
 	static uint8_t testFirstGistances = 0;
 	testFirstGistances++;
 	if(testFirstGistances>50 && destDistanceMM <= STOP_DISTANCE_VALUE_MM ){
-		//destIsNotReached = false;
+		destIsNotReached = false;
 		testFirstGistances = 100; //TODOPING check how to remove this magic number
 	}
 
@@ -230,6 +236,10 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached destReachedCallback){
 	motCtrlThread = 	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
 
 	return &dirAngleCb;
+}
+
+void travCtrl_startStop(bool startGoing){
+	robShouldMove=startGoing;
 }
 
 /*===========================================================================*/

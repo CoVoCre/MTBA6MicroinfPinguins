@@ -46,6 +46,7 @@
 #define NB_BYTE_PER_CMPX_VAL			2
 
 travCtrl_dirAngleCb_t updateAngle;
+bool robotMoving = false;
 
 //static void timer12_start(void){
 //    //General Purpose Timer configuration
@@ -70,7 +71,7 @@ travCtrl_dirAngleCb_t updateAngle;
  *
  */
 void destReachedCB(void){
-	//destReached = true;
+#ifdef DEBUG_MAIN
 	chprintf(UART_PORT_STREAM,"---------------------------------------------------------------\n\r");
 	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
 	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
@@ -78,8 +79,9 @@ void destReachedCB(void){
 	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
 	chprintf(UART_PORT_STREAM,"-                                                             -\n\r");
 	chprintf(UART_PORT_STREAM,"---------------------------------------------------------------\n\r");
-
-	chThdSleepMilliseconds(1000);
+#endif // DEBUG_MAIN
+	chprintf(UART_PORT_STREAM,"Reached destination !!!\n\r");
+	robotMoving=false;
 }
 
 int main(void)
@@ -114,10 +116,13 @@ int main(void)
 
     Destination destination;
     int16_t audio_peak			= 0;
+    uint16_t nb_sources			= 0;
 
     destination.index		= UNINITIALIZED_INDEX;
     destination.freq			= UNINITIALIZED_FREQ;
     destination.arg			= 0;
+
+
 
     /* SEND_FROM_MIC */
     //starts the microphones processing thread.
@@ -126,58 +131,91 @@ int main(void)
 
     /* Infinite loop. */
     while (1) {
-    		//comms_printf(UART_PORT_STREAM, "Now please enter anything\n\r");
+    		{ /*Waits until enough samples are collected*/
+    	    		wait_send_to_computer();
 
-        /*Waits until enough samples are collected*/
-    		wait_send_to_computer();
+    	        /*Copy buffer to avoid conflicts*/
+    	        arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+    	        arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+    	        arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+    	        arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
 
-        /*Copy buffer to avoid conflicts*/
-        arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
-        arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
-        arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
-        arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back, NB_BYTE_PER_CMPX_VAL*FFT_SIZE);
+    	        /*Calculating FFT and its amplitude*/
+    	        audioCalculateFFT(mic_data_left, mic_data_right, mic_data_back, mic_data_front, mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+		}
+    		audioPeak(mic_ampli_left, &destination);
 
-        /*Calculating FFT and its amplitude*/
-        audioCalculateFFT(mic_data_left, mic_data_right, mic_data_back, mic_data_front, mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+    		nb_sources = audioGetNbSources();
+    		if(nb_sources==ERROR_AUDIO){
+        		chprintf((BaseSequentialStream *)&SD3, "There was an error, please restart robot \n\r\n\r");
+        		while(1){} //TODOPING stop everything else
+    		}
+    		if(nb_sources>0){
+		comms_printf("There are sources available !\n\r");
 
-        /*Testing two sources*/
-        destination.freq=998;	//corresponding to 998=400Hz, 991=500Hz, 995=450Hz
-        audio_peak = audioPeak(mic_ampli_left, &destination);
-        if(audio_peak==ERROR_AUDIO){
+		for(uint8_t i=0; i<nb_sources; i++){
+			int16_t source_angle = audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, i);
+			uint16_t source_freq = audioGetSourceFreq(i);
+			if(source_angle==ERROR_AUDIO || source_freq==ERROR_AUDIO){
+				chprintf((BaseSequentialStream *)&SD3, "There was an error, please restart robot \n\r\n\r");
+				while(1){} //TODOPING stop everything else
+			}
+    			comms_printf(UART_PORT_STREAM, "Source %d has angle =%d and frequency =%u\n\r", i,source_angle, source_freq);
+		}
+
+		comms_printf(UART_PORT_STREAM, "Now please enter the number of the source you want our little penguin to go to\n\r");
+		uint8_t readNumberText[SOURCE_MAX_TEXT_LENGTH];
+		uint8_t readNumber;
+		comms_readf(UART_PORT_STREAM, readNumberText, SOURCE_MAX_TEXT_LENGTH);
+		readNumber = (uint8_t) strtol(readNumberText, readNumberText+SOURCE_MAX_TEXT_LENGTH-1,NUM_BASE_10);
 #ifdef DEBUG_MAIN
-        		chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioPeak\n\r\n\r");
+        	chprintf((BaseSequentialStream *)&SD3, "You said %d ?\n\r\n\r", readNumber);
 #endif
-        }
-        else if(audio_peak==ERROR_AUDIO_SOURCE_NOT_FOUND){
-#ifdef DEBUG_MAIN
-			chprintf((BaseSequentialStream *)&SD3, "main:	Error source not found ! \n\r\n\r");
-#endif
-        }
-        else{
-        		if(destination.index==UNINITIALIZED_INDEX){
-#ifdef DEBUG_MAIN
-        			chprintf((BaseSequentialStream *)&SD3, "main:	UNINITIALIZED_INDEX\n\r\n\r");
-#endif
-        		}
-        		else{
-        			destination.arg = audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, destination.index);
-            		if(destination.arg==ERROR_AUDIO){
-#ifdef DEBUG_MAIN
-            			chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioAnalyseDirection\n\r\n\r");
-#endif
-                		destination.arg = 0;
-                		updateAngle(destination.arg);
-              	}
-            		else{
-#ifdef DEBUG_MAIN
-            			chprintf((BaseSequentialStream *)&SD3, "main:	Source %d :		Freq %d	:		arg  = %d\n\r", destination.index, audioConvertFreq(destination.freq), destination.arg);
-#endif
-                		updateAngle(destination.arg);
-            		}
-        		}
+        	destination.index = readNumber;
+        	destination.freq = audioGetSourceFreq(destination.index);
 
-        }
+        	robotMoving=true;
+        	travCtrl_startStop(robotMoving);
+        	while(robotMoving==true){
 
+			/*Testing two sources*/
+
+			audio_peak = audioPeak(mic_ampli_left, &destination);
+			if(audio_peak==ERROR_AUDIO){
+	#ifdef DEBUG_MAIN
+					chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioPeak\n\r\n\r");
+	#endif
+			}
+			else if(audio_peak==ERROR_AUDIO_SOURCE_NOT_FOUND){
+	#ifdef DEBUG_MAIN
+				chprintf((BaseSequentialStream *)&SD3, "main:	Error source not found ! \n\r\n\r");
+	#endif
+			}
+			else{
+					if(destination.index==UNINITIALIZED_INDEX){
+	#ifdef DEBUG_MAIN
+						chprintf((BaseSequentialStream *)&SD3, "main:	UNINITIALIZED_INDEX\n\r\n\r");
+	#endif
+					}
+					else{
+						destination.arg = audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, destination.index);
+						if(destination.arg==ERROR_AUDIO){
+	#ifdef DEBUG_MAIN
+							chprintf((BaseSequentialStream *)&SD3, "main:	Error in audioAnalyseDirection\n\r\n\r");
+	#endif
+							destination.arg = 0;
+							updateAngle(destination.arg);
+					}
+						else{
+	#ifdef DEBUG_MAIN
+							chprintf((BaseSequentialStream *)&SD3, "main:	Source %d :		Freq %d	:		arg  = %d\n\r", destination.index, audioConvertFreq(destination.freq), destination.arg);
+	#endif
+							updateAngle(destination.arg);
+						}
+					}
+
+			}
+        	}
     }
 }
 

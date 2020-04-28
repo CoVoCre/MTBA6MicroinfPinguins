@@ -72,6 +72,11 @@ void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_d
 uint16_t audioGetSourceFreq(uint8_t source_index);
 
 /*
+ * Returns number of sources found, or if there is an error, returns ERROR_AUDIO
+ */
+uint8_t audioGetNbSources(void);
+
+/*
  * Determines the direction of the sound
  */
 int16_t audioDetermineAngle(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front, uint8_t source_index);

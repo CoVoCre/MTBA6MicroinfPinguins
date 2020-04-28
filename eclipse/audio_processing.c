@@ -128,10 +128,25 @@ void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_d
 uint16_t audioGetSourceFreq(uint8_t source_index)
 {
 	if((source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)){
+#ifdef DEBUG_AUDIO
+		chprintf((BaseSequentialStream *)&SD3, "audioGetSourceFreq: source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)	\n\r\n\r");
+#endif
 		return ERROR_AUDIO;
 	}
 	return source[source_index].freq;
 }
+
+uint8_t audioGetNbSources(void)
+{
+	if(nb_sources>NB_SOURCES_MAX){
+#ifdef DEBUG_AUDIO
+        		chprintf((BaseSequentialStream *)&SD3, "audioGetNbSources:	nb_sources>NB_SOURCES_MAX\n\r\n\r");
+#endif
+		return ERROR_AUDIO;
+	}
+	return nb_sources;
+}
+
 
 /*
  * Calculate angle of sound direction
@@ -250,37 +265,46 @@ uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
    		return ERROR_AUDIO;
    	}
 
-   	/*If stable state is reached, write source_init into source array*/
-	if(nb_sources_init!=nb_sources_change){
-		nb_sources_change = nb_sources_init;
-		nb_sources_change_counter = NB_STAB_CYCLES;
-	}
-	else{
-		if(nb_sources_change_counter > ZERO){
-			nb_sources_change_counter--;
+
+   	if(destination->index==UNINITIALIZED_INDEX){
+		nb_sources=nb_sources_init;
+   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+   		}
+   	}
+   	else{
+   		/*If stable state is reached, write source_init into source array*/
+		if(nb_sources_init!=nb_sources_change){
+			nb_sources_change = nb_sources_init;
+			nb_sources_change_counter = NB_STAB_CYCLES;
 		}
 		else{
-			nb_sources=nb_sources_init;
-			destination->index=UNINITIALIZED_INDEX;
-			for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-				if(source_counter<nb_sources_init){
-					audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-					if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){
-						destination->freq=source[source_counter].freq;
-						destination->index=source_counter;
+			if(nb_sources_change_counter > ZERO){
+				nb_sources_change_counter--;
+			}
+			else{
+				nb_sources=nb_sources_init;
+				destination->index=UNINITIALIZED_INDEX;
+				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+					if(source_counter<nb_sources_init){
+						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){
+							destination->freq=source[source_counter].freq;
+							destination->index=source_counter;
+						}
+					}
+					else{
+						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
 					}
 				}
-				else{
-					audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
+
+
+				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
+	#ifdef DEBUG_AUDIO
+					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
+	#endif
+					return ERROR_AUDIO_SOURCE_NOT_FOUND;
 				}
-			}
-
-
-			if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
-#ifdef DEBUG_AUDIO
-				chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
-#endif
-				return ERROR_AUDIO_SOURCE_NOT_FOUND;
 			}
 		}
 	}
