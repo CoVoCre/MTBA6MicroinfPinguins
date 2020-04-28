@@ -141,7 +141,7 @@ int16_t motControllerCalculatetSpeedDiff(void){
 	avgLastNAngles+=lastNAngles[0];
 	avgLastNAngles = avgLastNAngles/MOT_KI_N_ANGLES;
 
-//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT \
+//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT
 //					+ MOT_KI_DIFF* MOT_MAX_DIFF_SPS_FOR_CORRECTION * avgLastNAngles / MOT_MAX_ANGLE_TO_CORRECT;
 	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT;
 

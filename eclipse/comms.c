@@ -88,9 +88,9 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize){
+uint16_t comms_readf(BaseSequentialStream *in, char *readText, uint16_t arraySize){
 	uint16_t numOfCharsRead = 0;
-	uint8_t readChar;
+	char readChar;
 
 	comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
 

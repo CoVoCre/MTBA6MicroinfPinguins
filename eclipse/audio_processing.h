@@ -5,7 +5,9 @@
 #define DEBUG_AUDIO
 
 #define FFT_SIZE 						1024
-#define ERROR_AUDIO						9999						//Error number
+#define ERROR_AUDIO						99						//Error number //TODOPING there was a problem
+																//as it was 9999 and this bigger than uint8_t of audioGetNbSources function
+																//so I set it to 99 as it shouldn't be that many sources !
 #define SUCCESS_AUDIO					1
 #define ERROR_AUDIO_SOURCE_NOT_FOUND		8888
 #define NB_SOURCES_MAX					5						//Max 255 sources!

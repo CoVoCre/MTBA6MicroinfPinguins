@@ -36,7 +36,7 @@ travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached travCtrl_destReachedCal
  * @brief   To start or stop moving.
  * @parameter [in] startGoing true or false to start or stop
 */
-void travCtrl_startStop(bool startGoing){
+void travCtrl_startStop(bool startGoing);
 
 
 /*===========================================================================*/
