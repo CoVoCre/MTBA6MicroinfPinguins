@@ -25,7 +25,7 @@
 //uncomment to use double buffering to send the FFT to the computer
 #define DOUBLE_BUFFERING
 
-#define NB_BYTE_PER_CMPX_VAL			2
+//#define NB_BYTE_PER_CMPX_VAL			2
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
 
@@ -38,40 +38,40 @@ bool robotMoving = false;
  */
 void destReachedCB(void) {
 #ifdef DEBUG_MAIN
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"---------------------------------------------------------------\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"-                                                             -\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"-                                                             -\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"WARNING test_destReachedCB was called and waiting 1second\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"-                                                             -\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"-                                                             -\n\r");
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 			"---------------------------------------------------------------\n\r");
 #endif // DEBUG_MAIN
 	robotMoving = false;
 }
 
 void main_unhandledError(void){
-	chprintf(UART_PORT_STREAM,
+	comms_printf(UART_PORT_STREAM,
 				"---------------------------------------------------------------\n\r");
-		chprintf(UART_PORT_STREAM,
-				"-                                                             -\n\r");
-		chprintf(UART_PORT_STREAM,
-				"-                                                             -\n\r");
-		chprintf(UART_PORT_STREAM,
-				"CRITICAL ERROR please reset robot\n\r");
-		chprintf(UART_PORT_STREAM,
-				"-                                                             -\n\r");
-		chprintf(UART_PORT_STREAM,
-				"-                                                             -\n\r");
-		chprintf(UART_PORT_STREAM,
-				"---------------------------------------------------------------\n\r");
-		while(1){};
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"CRITICAL ERROR please reset robot\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"---------------------------------------------------------------\n\r");
+	while(1){}
 }
 
 int main(void) {
@@ -91,7 +91,7 @@ int main(void) {
 	destination.freq = UNINITIALIZED_FREQ;
 	destination.arg = 0;
 
-	int16_t audio_peak = 0;
+	//int16_t audio_peak = 0;
 	uint16_t nb_sources = 0;
 
 	halInit();
@@ -115,12 +115,9 @@ int main(void) {
 	/* Infinite main thread loop. */
 	while (1) {
 		//TODOPING break down code to smaller sub functions, here could be till audioCalculateFFT
-
-		while(nb_sources==0){ //we want to keep checking sources until some are found
-			nb_sources = audioP_analyseSoundPeaksFreqsAngles();
-			if(nb_sources==ERROR_AUDIO){
-				main_unhandledError();
-			}
+		nb_sources=0;
+		while(nb_sources==0 || nb_sources==ERROR_AUDIO){ //we want to keep checking sources until some are found
+			nb_sources = audioP_analyseSoundPeaksFreqs();
 		}
 
 //		//Waits until enough sound samples are collected
@@ -192,56 +189,70 @@ int main(void) {
 		robotMoving = true;
 
 		while (robotMoving == true) {
-			while(nb_sources==0){ //we want to keep checking sources until some are found
-				nb_sources = audioP_analyseSoundPeaksFreqsAngles();
-				if(nb_sources==ERROR_AUDIO){
-					main_unhandledError();
+			nb_sources=0;
+			uint16_t tempIndexErrorUpdate = ERROR_AUDIO;
+			uint8_t tempAudioDirectionAngle = ERROR_AUDIO;
+			while(nb_sources==0 || nb_sources==ERROR_AUDIO || tempIndexErrorUpdate==ERROR_AUDIO){ //we want to keep checking sources until good data is ready
+				nb_sources = audioP_analyseSoundPeaksFreqs();
+
+				tempIndexErrorUpdate = audioP_updateDirectionIndex(&destination);
+				if(tempIndexErrorUpdate==ERROR_AUDIO_SOURCE_NOT_FOUND){
+					comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
+					robotMoving = false;
+					travCtrl_stopMoving();
+					break;	//exit while loop too start again from top statement
 				}
+
+				tempAudioDirectionAngle = audioP_determineSrcAngle(destination.index);
+
 			}
 
-			audio_peak = audioPeak(mic_ampli_left, &destination);
-			if (audio_peak == ERROR_AUDIO) {
-#ifdef DEBUG_MAIN
-				chprintf((BaseSequentialStream *) &SD3,
-						"main:	Error in audioPeak\n\r\n\r");
-#endif
-			} else if (audio_peak == ERROR_AUDIO_SOURCE_NOT_FOUND) {
-#ifdef DEBUG_MAIN
-				chprintf((BaseSequentialStream *) &SD3,
-						"main:	Error source not found ! \n\r\n\r");
-#endif
-			} else {
-				if (destination.index == UNINITIALIZED_INDEX) {
-#ifdef DEBUG_MAIN
-					chprintf((BaseSequentialStream *) &SD3,
-							"main:	UNINITIALIZED_INDEX\n\r\n\r");
-#endif
-				} else {
-					destination.arg = audioDetermineAngle(mic_data_left,
-							mic_data_right, mic_data_back, mic_data_front,
-							destination.index);
-					if (destination.arg == ERROR_AUDIO) {
-#ifdef DEBUG_MAIN
-						chprintf((BaseSequentialStream *) &SD3,
-								"main:	Error in audioAnalyseDirection\n\r\n\r");
-#endif
-						destination.arg = 0;
-						travelCtrl_goToAngle(destination.arg);
-					} else {
-#ifdef DEBUG_MAIN
-						chprintf((BaseSequentialStream *) &SD3,
-								"main:	Source %d :		Freq %d	:		arg  = %d\n\r",
-								destination.index,
-								audioConvertFreq(destination.freq),
-								destination.arg);
-#endif
-						travelCtrl_goToAngle(destination.arg);
-					}
-				}
-			}
-		}
+			travelCtrl_goToAngle(tempAudioDirectionAngle);
+
+
+//			//audio_peak = audioPeak(mic_ampli_left, &destination);
+//			if (audio_peak == ERROR_AUDIO) {
+//#ifdef DEBUG_MAIN
+//				chprintf((BaseSequentialStream *) &SD3,
+//						"main:	Error in audioPeak\n\r\n\r");
+//#endif
+//			} else if (audio_peak == ERROR_AUDIO_SOURCE_NOT_FOUND) {
+//#ifdef DEBUG_MAIN
+//				chprintf((BaseSequentialStream *) &SD3,
+//						"main:	Error source not found ! \n\r\n\r");
+//#endif
+//			} else {
+//				if (destination.index == UNINITIALIZED_INDEX) {
+//#ifdef DEBUG_MAIN
+//					chprintf((BaseSequentialStream *) &SD3,
+//							"main:	UNINITIALIZED_INDEX\n\r\n\r");
+//#endif
+//				} else {
+//					destination.arg = audioDetermineAngle(mic_data_left,
+//							mic_data_right, mic_data_back, mic_data_front,
+//							destination.index);
+//					if (destination.arg == ERROR_AUDIO) {
+//#ifdef DEBUG_MAIN
+//						chprintf((BaseSequentialStream *) &SD3,
+//								"main:	Error in audioAnalyseDirection\n\r\n\r");
+//#endif
+//						destination.arg = 0;
+//						travelCtrl_goToAngle(destination.arg);
+//					} else {
+//#ifdef DEBUG_MAIN
+//						chprintf((BaseSequentialStream *) &SD3,
+//								"main:	Source %d :		Freq %d	:		arg  = %d\n\r",
+//								destination.index,
+//								audioConvertFreq(destination.freq),
+//								destination.arg);
+//#endif
+//						travelCtrl_goToAngle(destination.arg);
+//					}
+//				}
+//			}
+		} //end of while robotMoving
 //		} // end of if(nb_sources>0)
-	} //End of infinite main thread loop
+	} //End of infinite main thread while loop
 }
 
 

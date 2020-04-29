@@ -18,11 +18,13 @@
 #include <audio/microphone.h>
 #include <audio_processing.h>
 //#include <communications.h>
+#include <comms.h>
 #include <fft.h>
 #include <arm_math.h>
 
 /*Definitions*/
 #define CMPX_VAL							2
+#define NB_BYTE_PER_CMPX_VAL			2
 #define CMPX_PART						1
 #define LEFT_MIC							1
 #define BACK_MIC							2
@@ -191,12 +193,12 @@ int16_t audioPeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic_
  * 				with inside source araay :lowest_freq is in source[0].freq ,highest_freq is in source[nb].freq
  *
  * @param[in] mic_ampli_left		array of amplitudes for all frequencies //TODOPING it should be mic_ampli not mic_ampli_left, it's comfusing !
- * @param[out] destination		pointer to the wanted source, where destination->index is the index of the source for which to set
+ * @param[out] destination		pointer to the wanted source, where destination->index is the index of the source for which to set //TODOPING trying to reemove this !
  * 									the amplitude and frequency (except if index is not initialised)
  *
  * @return	error codes SUCCESS_AUDIO if all good, ERROR_AUDIO otherwise
  */
-uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
+uint16_t audioPeak(float *mic_ampli_left)//, Destination *destination)
 {
 	uint8_t source_counter						= ZERO;
 	uint8_t nb_sources_init						= ZERO;
@@ -216,14 +218,14 @@ uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
    		return ERROR_AUDIO;
    	}
 
-   	if(destination->index==UNINITIALIZED_INDEX){ //just copy sources found and sorted into source_init array, for checking potential errors afterwards
-   		//TODOPING why do this ? It's just to check errors ?
-		nb_sources=nb_sources_init;
-   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-   		}
-   	}
-   	else{
+//   	if(destination->index==UNINITIALIZED_INDEX){ //just copy sources found and sorted into source_init array, for checking potential errors afterwards
+//   		//TODOPING why do this ? It's just to check errors ?
+//		nb_sources=nb_sources_init;
+//   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+//   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+//   		}
+//   	}
+//   	else{
    		/*If stable state is reached, we will copy source_init into file level source array, and update the destination*/
 		if(nb_sources_init!=nb_sources_change){ //check if there is a different number of sources from last time, to see if it has stabilised
 			nb_sources_change = nb_sources_init;
@@ -235,16 +237,16 @@ uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
 			}
 			else{ //we do this only when it has stabilised for the last NB_STAB_CYCLES
 				nb_sources=nb_sources_init;
-				destination->index=UNINITIALIZED_INDEX;	//TODOPING why do this ?
+				//destination->index=UNINITIALIZED_INDEX;	//TODOPING why do this ?
 				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){ //update file scoped source array with new sources in source_init and clear rest of array
 					if(source_counter<nb_sources_init){
 						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init); //TODOPING why not do the copying right here as it's not long
-						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){ //update destination structure with close frequency source in new sources array
-																						//TODOPING shouldn't this be done somewhere else, as it is the only thing
-																							//where we use destinatioon but it makes the whole function more complicated
-							destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
-							destination->index=source_counter;
-						}
+//						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){ //update destination structure with close frequency source in new sources array
+//																						//TODOPING shouldn't this be done somewhere else, as it is the only thing
+//																							//where we use destinatioon but it makes the whole function more complicated
+//							destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
+//							destination->index=source_counter;
+//						}
 					}
 					else{ //here we clear the rest of the file scope source  array
 						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init); //TODOPING again, why not do the clearing right here as it's not long
@@ -252,36 +254,36 @@ uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
 				}
 
 
-				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
-	#ifdef DEBUG_AUDIO
-					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
-	#endif
-					return ERROR_AUDIO_SOURCE_NOT_FOUND;
-				}
+//				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
+//	#ifdef DEBUG_AUDIO
+//					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
+//	#endif
+//					return ERROR_AUDIO_SOURCE_NOT_FOUND;
+//				}
 			}
 		}
-	}
+//	}
 
    	{//Checking for all sorts of errors below, before returnin success if no errors
 		/*Error: Peak ampli is too low*/
 		//TODOPING how is this case possible as we check before entering a new source that it's amplitude is ? to AMPLI_THD ?!
-		if(source_init[destination->index].ampli<AMPLI_THD){
-	#ifdef DEBUG_AUDIO
-			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
-			chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
-	#endif
-			return ERROR_AUDIO;
-		}
+//		if(source_init[destination->index].ampli<AMPLI_THD){
+//	#ifdef DEBUG_AUDIO
+//			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
+//			chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
+//	#endif
+//			return ERROR_AUDIO;
+//		}
 
 		/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
 		//TODOPING Shouldn't we check this before adding a new source to source_init[] ?!
-		if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
-	#ifdef DEBUG_AUDIO
-			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
-			chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
-	#endif
-			return ERROR_AUDIO;
-		}
+//		if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
+//	#ifdef DEBUG_AUDIO
+//			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
+//			chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
+//	#endif
+//			return ERROR_AUDIO;
+//		}
 
 		/*Error: Two peak freq are too close, difference<30Hz*/
 		//TODOPING didn't we already cover this case when entering sources ?
@@ -424,7 +426,7 @@ void audioP_init(){
 	mic_start(&processAudioData);
 }
 
-uint8_t audioP_analyseSoundPeaksFreqsAngles(void){
+uint8_t audioP_analyseSoundPeaksFreqs(void){
 	//Waits until enough sound samples are collected
 	wait_send_to_computer(); //TODOPING rename function or just reorganize code
 
@@ -443,15 +445,16 @@ uint8_t audioP_analyseSoundPeaksFreqsAngles(void){
 						mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
 
 	/*Find peak intensity sources and sort them according to frequency,
-	 * returns angle of destination source but here it is not needed
+	 * returns angle of destination source but here it is not needed //TODOPING changed this so not anymore
 	 * NB for the first time, destination is not important, we have it uninitialized which works out */
-	{
-		Destination destination;
-		destination.index = UNINITIALIZED_INDEX;
-		destination.freq = UNINITIALIZED_FREQ;
-		destination.arg = 0;
-		audioPeak(mic_ampli_left, &destination); //we find the peaks by default on left mic data but could be any of the four mics
-	}
+//	{
+//		Destination destination;
+//		destination.index = UNINITIALIZED_INDEX;
+//		destination.freq = UNINITIALIZED_FREQ;
+//		destination.arg = 0;
+		audioPeak(mic_ampli_left);//, &destination); //we find the peaks by default on left mic data but could be any of the four mics
+//	}
+
 
 	//we check if how many sources is an error otherwise we just return it
 	uint8_t nb_sources_tmp = audioGetNbSources();	//TODOPING we could actually incorporate the function here
@@ -471,7 +474,34 @@ uint8_t audioP_analyseSoundPeaksFreqsAngles(void){
 }
 
 int16_t audioP_determineSrcAngle(uint8_t source_index){
-	return audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
+	return audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, source_index);
+}
+
+/*
+ * @brief get the last calculated angle for the destination source (identified by its frequency)
+ * @param[out] pointer to destinatin structure, where index and freq of destinatin source are.
+ * 					values might be changed, frequency will be the nearest found frequency closer than FREQ_THD,
+ * 					and index if order of sources has changed
+ * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
+ */
+uint16_t audioP_updateDirectionIndex(Destination *destination){
+	//check if destination source is still available, and update it's param to closest match
+	for(uint8_t source_counter = 0; source_counter<nb_sources; source_counter++){
+		if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){ //update destination structure with close frequency source in new sources array
+																		//where we use destinatioon but it makes the whole function more complicated
+			if (source[source_counter].freq == ERROR_AUDIO) {
+				destination->index = UNINITIALIZED_INDEX;
+				destination->freq=UNINITIALIZED_FREQ;
+				return ERROR_AUDIO;
+			}
+			destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
+			destination->index=source_counter;
+			return SUCCESS_AUDIO;
+		}
+	}
+
+	//TODOPING what other errors should we check here ?
+	return ERROR_AUDIO_SOURCE_NOT_FOUND;
 }
 
 /*===========================================================================*/

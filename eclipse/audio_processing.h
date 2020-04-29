@@ -15,7 +15,7 @@
 #define DEBUG_AUDIO
 
 #define FFT_SIZE 						1024
-#define ERROR_AUDIO						99						//Error number //TODOPING there was a problem
+#define ERROR_AUDIO						99						//Error number //TODOPING there was a problem, one time we return a uint8_t so not possible
 																//as it was 9999 and this bigger than uint8_t of audioGetNbSources function
 																//so I set it to 99 as it shouldn't be that many sources !
 #define SUCCESS_AUDIO					1
@@ -53,7 +53,7 @@ typedef struct Sources {
 typedef struct Destinations {
 	uint8_t index;
 	uint16_t freq;
-	int16_t arg;
+	int16_t arg; //TODOPING is the arg still necessary ?
 } Destination;
 
 /*
@@ -102,7 +102,7 @@ int16_t audioDeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_i
  * Calculates NB_SOURCES peak values and sorts them after freq
  * Returns peak freq of source_index; source_index=ZERO: lowest_freq, source_index=NB_SOURCES-ONE: highest_freq
  */
-uint16_t audioPeak(float *mic_ampli_left, Destination *destination);
+uint16_t audioPeak(float *mic_ampli_left);//, Destination *destination);
 
 /*
  * Changing source array if necessary, array is sorted by ampli: source[0].=smallest_ampli, source[nb_sources].=biggest_ampli
@@ -175,11 +175,11 @@ float* get_audio_buffer_ptr(BUFFER_NAME_t name);
 void audioP_init(void);
 
 /*
- * @brief 	acquires and analyses a sound clip (FFT_SIZE samples),
- * 				to find peaks and the corresponding frequencies and angles
+ * @brief 	acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity sources and their corresponding frequencies
+ *
  * @return	number of sources that were found emitting typical sound, or ERROR_AUDIO if there was an error somewhere (ask user to reset)
  */
-uint8_t audioP_analyseSoundPeaksFreqsAngles(void);
+uint8_t audioP_analyseSoundPeaksFreqs(void);
 
 /*
  * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
@@ -189,5 +189,14 @@ uint8_t audioP_analyseSoundPeaksFreqsAngles(void);
  * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
  */
 int16_t audioP_determineSrcAngle(uint8_t source_index);
+
+/*
+ * @brief get the last calculated angle for the destination source (identified by its frequency)
+ * @param[out] pointer to destinatin structure, where index and freq of destinatin source are.
+ * 					values might be changed, frequency will be the nearest found frequency closer than FREQ_THD,
+ * 					and index if order of sources has changed
+ * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
+ */
+uint16_t audioP_updateDirectionIndex(Destination *destination);
 
 #endif /* AUDIO_PROCESSING_H */
