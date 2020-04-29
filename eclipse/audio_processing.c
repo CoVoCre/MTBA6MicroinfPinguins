@@ -76,6 +76,17 @@ static float micRight_cmplx_input[CMPX_VAL*FFT_SIZE];
 static float micFront_cmplx_input[CMPX_VAL*FFT_SIZE];
 static float micBack_cmplx_input[CMPX_VAL*FFT_SIZE];
 
+//arrays used to save the state of the mic audio buffer (double buffering)
+//to avoid modifications of the buffer while analysing it
+static float mic_data_right[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
+static float mic_data_left[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
+static float mic_data_front[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
+static float mic_data_back[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
+static float mic_ampli_right[FFT_SIZE];
+static float mic_ampli_left[FFT_SIZE];
+static float mic_ampli_front[FFT_SIZE];
+static float mic_ampli_back[FFT_SIZE];
+
 /*Static structure to memories freq and ampli of each source*/
 static Source source[NB_SOURCES_MAX];
 
@@ -123,23 +134,273 @@ void processAudioData(int16_t *data, uint16_t num_samples)
 	}
 }
 
-/*===========================================================================*/
-/* Public functions for setting/getting internal parameters             */
-/*===========================================================================*/
-void audioP_init(){
-	//starts the microphones processing thread.
-	//it calls the callback given in parameter when samples are ready
-	mic_start(&processAudioData);
+/*
+ * @brief		will search for peak amplitudes in amplitudes array //TODOPING was "Changing source array if necessary, array is sorted by amplitude:"... but didn't understand...
+ *
+ * @param [out]  source_init 		pointer to a Source array, where the found sources will be stored, sorted by amplitude :
+ * 					source_init[0].ampli = source with smallest amplitude, ..., source[nb_sources].ampli = source with biggest amplitude
+ * @param [out] nb_sources_init 		pointer to where the number corresponding to how many sources were found should be stored. Cannot be bigger than
+ * @param[in] mic_ampli				array of amplitudes for all frequencies
+ * @param return 					error codes SUCCESS_AUDIO if all ok, ERROR_AUDIO if error somewhere...
+ */
+int16_t audioPeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic_ampli)
+{
+	uint8_t source_counter						= ZERO;
+	uint8_t source_exchange						= ZERO;
+	uint8_t peak_mode							= ZERO;
+
+		*nb_sources_init=ZERO;
+		for(uint16_t freq_counter=HALF_FFT_SIZE; freq_counter<FFT_SIZE; freq_counter++){
+			peak_mode=PEAK_MODE_DO_NOTHING;
+			if(mic_ampli[freq_counter]>AMPLI_THD){
+				source_exchange=ZERO;
+				peak_mode=PEAK_MODE_SMALLER;
+				for(source_counter=ZERO; source_counter<*nb_sources_init; source_counter++){
+					if((freq_counter-(&source_init[source_counter])->freq)>FREQ_THD){
+						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
+							source_exchange++;
+							peak_mode=PEAK_MODE_EXCHANGE;
+						}
+					}
+					else{
+						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
+							source_exchange = source_counter;
+							peak_mode=PEAK_MODE_REPLACE;
+						}
+						else{
+							peak_mode=PEAK_MODE_DO_NOTHING;
+						}
+						break;
+					}
+				}
+			}
+
+			if(peak_mode != PEAK_MODE_DO_NOTHING){
+				if(audioPeakChange(source_exchange, freq_counter, mic_ampli, peak_mode, source_init, nb_sources_init)==ERROR_AUDIO){
+					return ERROR_AUDIO;
+				}
+			}
+		} //end for
+
+	return SUCCESS_AUDIO;
 }
 
-
-
-/*===========================================================================*/
-/* TODOPING old stuff to sort through             */
-/*===========================================================================*/
 /*
- * Calculates FFT and its amplitude of the for mic
- * FFT is saved in mic_data and amplitude in mic_ampli
+ * @brief 	finds loudest audio sources in sound clip, and their frequencies and amplitudes
+ * @note 	this function updates file scope vars nb_sources and source (array) for later functions,
+ * 				with inside source araay :lowest_freq is in source[0].freq ,highest_freq is in source[nb].freq
+ *
+ * @param[in] mic_ampli_left		array of amplitudes for all frequencies //TODOPING it should be mic_ampli not mic_ampli_left, it's comfusing !
+ * @param[out] destination		pointer to the wanted source, where destination->index is the index of the source for which to set
+ * 									the amplitude and frequency (except if index is not initialised)
+ *
+ * @return	error codes SUCCESS_AUDIO if all good, ERROR_AUDIO otherwise
+ */
+uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
+{
+	uint8_t source_counter						= ZERO;
+	uint8_t nb_sources_init						= ZERO;
+	static uint8_t nb_sources_change 			= ZERO;
+	static uint8_t nb_sources_change_counter		= ZERO;
+   	static Source source_init[NB_SOURCES_MAX];
+
+   	//Find sources sorted by their peak amplitudes and set their frequency into source_init array. Use by convention mic_ampli_left but could be any of the four mics.
+   	//TODOPING I found this was false : "for each mic and return error if they are unequal"?
+   	if(audioPeakScan(source_init, &nb_sources_init, mic_ampli_left)==ERROR_AUDIO){
+		return ERROR_AUDIO;
+	}
+
+   	/*Bubblesort: sort source_init array accoording to frequencies : smallet frequency will be in source_init[0]->freq, ..., max frequency will be in source_init[nb_sources_init]*/
+   	//NB we use mic_ampli_left as the convention
+   	if(audioPeakBubblesort(source_init, nb_sources_init, mic_ampli_left)==ERROR_AUDIO){
+   		return ERROR_AUDIO;
+   	}
+
+   	if(destination->index==UNINITIALIZED_INDEX){ //just copy sources found and sorted into source_init array, for checking potential errors afterwards
+   		//TODOPING why do this ? It's just to check errors ?
+		nb_sources=nb_sources_init;
+   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+   		}
+   	}
+   	else{
+   		/*If stable state is reached, we will copy source_init into file level source array, and update the destination*/
+		if(nb_sources_init!=nb_sources_change){ //check if there is a different number of sources from last time, to see if it has stabilised
+			nb_sources_change = nb_sources_init;
+			nb_sources_change_counter = NB_STAB_CYCLES; //we want constant number of sources found for NB_STAB_CYCLES, to know it is stable and proceed
+		}
+		else{
+			if(nb_sources_change_counter > ZERO){
+				nb_sources_change_counter--;
+			}
+			else{ //we do this only when it has stabilised for the last NB_STAB_CYCLES
+				nb_sources=nb_sources_init;
+				destination->index=UNINITIALIZED_INDEX;	//TODOPING why do this ?
+				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){ //update file scoped source array with new sources in source_init and clear rest of array
+					if(source_counter<nb_sources_init){
+						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init); //TODOPING why not do the copying right here as it's not long
+						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){ //update destination structure with close frequency source in new sources array
+																						//TODOPING shouldn't this be done somewhere else, as it is the only thing
+																							//where we use destinatioon but it makes the whole function more complicated
+							destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
+							destination->index=source_counter;
+						}
+					}
+					else{ //here we clear the rest of the file scope source  array
+						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init); //TODOPING again, why not do the clearing right here as it's not long
+					}
+				}
+
+
+				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
+	#ifdef DEBUG_AUDIO
+					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
+	#endif
+					return ERROR_AUDIO_SOURCE_NOT_FOUND;
+				}
+			}
+		}
+	}
+
+   	{//Checking for all sorts of errors below, before returnin success if no errors
+		/*Error: Peak ampli is too low*/
+		//TODOPING how is this case possible as we check before entering a new source that it's amplitude is ? to AMPLI_THD ?!
+		if(source_init[destination->index].ampli<AMPLI_THD){
+	#ifdef DEBUG_AUDIO
+			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
+			chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
+	#endif
+			return ERROR_AUDIO;
+		}
+
+		/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
+		//TODOPING Shouldn't we check this before adding a new source to source_init[] ?!
+		if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
+	#ifdef DEBUG_AUDIO
+			chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
+			chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
+	#endif
+			return ERROR_AUDIO;
+		}
+
+		/*Error: Two peak freq are too close, difference<30Hz*/
+		//TODOPING didn't we already cover this case when entering sources ?
+		for(source_counter=ZERO; source_counter<nb_sources_init; source_counter++){
+			for(uint8_t i=ZERO; i<nb_sources_init; i++){
+				if((i!=source_counter) && (abs(source_init[source_counter].freq-source_init[i].freq)<FREQ_THD)){
+	#ifdef DEBUG_AUDIO
+					chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max freq too close ! \n\r");
+					chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
+					chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", i, audioConvertFreq(source_init[i].freq));
+	#endif
+					return ERROR_AUDIO;
+				}
+			}
+		}
+   	} //end of checking for errors
+
+	return SUCCESS_AUDIO;
+}
+
+/*	//TODOPING : this function should be broken into three, because already all cases are pretty independent, and hard to grasp all in one.
+ * @brief	Adds (if it should), a new source (with frequency freq_counter and amplitude mic_ampli[freq_counter]) into source_init array,
+ * 				with different behaviors depending on peak_mode
+ *
+ *  	@param[in] source_exchange 	indicates position of replacement (useful only if exchange or replace needed)
+ *  	@param[in] freq_counter		indicates frequency of new source
+ *  	@paraim[in] mic_ampli		array of amplitudes for all frequencies, used to get amplitude of new source to insert
+ *  @param[in] peak_mode			indicates which type of manipulation on the Source array needs to be done. Possible cases are :
+ *  									peak_mode=PEAK_MODE_EXCHANGE: new ampli is bigger than min one of source array
+ *  									peak_mode=PEAK_MODE_SMALLER: new ampli is smaller than all of source array, so should just shift all (no deletion) in array to insert new one at index 0
+ *  									peak_mode=PEAK_MODE_REPLACE: freq_difference<FREQ_THD and one value of source array has to be replaced
+ *  	@param[out] source_init 		pointer to array of sources which needs updating in different ways depending on peak_mode
+ *  	@param[ou] nb_sources_init	point to number of sources stored in source_init array, if the new source is in fact added it will be incremented !
+ *
+ *  	@return						error codes SUCCESS_AUDIO if all ok, ERROR_AUDIO if error somewhere...
+ */
+int16_t audioPeakChange(int8_t source_exchange, uint16_t freq_counter, float *mic_ampli, uint8_t peak_mode, Source *source_init, uint8_t *nb_sources_init)
+{
+	uint8_t source_counter = ZERO; //TODOPING this neeeeeds to be in the loops, not here !!! It's confusing, because we think it's important !
+
+	if(source_exchange<ZERO){
+#ifdef DEBUG_AUDIO
+		chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : source_exchange not valid! \n\r");
+		chprintf((BaseSequentialStream *)&SD3, "source_exchange = %d \n\r", source_exchange);
+#endif
+		return ERROR_AUDIO;
+	}
+//	else if(source_exchange>=NB_SOURCES_MAX){ //TODOPING why not test this here and be done with validating input data ?!
+//#ifdef DEBUG_AUDIO
+//		chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakChange : source_counter out of range ! \n\r");
+//		chprintf((BaseSequentialStream *)&SD3, "source_exchange = %d \n\r", source_exchange);
+//#endif
+//		return ERROR_AUDIO;
+//	}
+
+	switch(peak_mode){
+		case PEAK_MODE_EXCHANGE:
+			//if array is full, we will shift all sources under source_exchange down (deleting lowest one), and insert new at source_exchange
+			//otherwise, if array is not full, we will go to case PEAK_MODE_SMALLER, to insert one and shift all up !
+			if(*nb_sources_init==NB_SOURCES_MAX){
+				source_exchange--; //TODOPING I think it'd be better just to do source_exchange-1 in for loop, it's more clear
+				for(source_counter=ZERO; source_counter<source_exchange; source_counter++){
+//					(&source_init[source_counter])->freq = (&source_init[source_counter+1])->freq;
+//					(&source_init[source_counter])->ampli = (&source_init[source_counter+1])->ampli;
+					if(audioPeakWriteInit(source_counter, WRITING_MODE_LOWER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){ //TODOPING why use a function to set things here ? It's pretty simple to do right here no ?
+						return ERROR_AUDIO;
+					}
+				}
+				if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
+					return ERROR_AUDIO;
+				}
+//				(&source_init[source_counter])->freq = freq_counter; //TODOPING why not just do like this right here ?!
+//				(&source_init[source_counter])->ampli = mic_ampli[freq_counter];
+			}
+		case PEAK_MODE_SMALLER:
+			//we need to insert new source at bottom of array, shifting all up, if it is not already full.
+			if(*nb_sources_init<NB_SOURCES_MAX){ //shift all up and insert lowest one at bottom (only if not already full)
+				for(source_counter=*nb_sources_init; source_counter>source_exchange; source_counter--){
+					if(audioPeakWriteInit(source_counter, WRITING_MODE_HIGHER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
+						return ERROR_AUDIO;
+					}
+				}
+				if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
+					return ERROR_AUDIO;
+				}
+				*nb_sources_init = *nb_sources_init + ONE;
+			}
+			break;
+
+		case PEAK_MODE_REPLACE:
+			//we seem to shift all sources up from source exchange, but not add new source...
+			while((source_exchange<(*nb_sources_init-1)) && (mic_ampli[freq_counter]>(&source_init[source_counter+ONE])->ampli)){ //TODOPING source_counter=0, always...
+				if(audioPeakWriteInit(source_exchange, WRITING_MODE_LOWER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
+					return ERROR_AUDIO;
+				}
+//				(&source_init[source_exchange])->freq = (&source_init[source_exchange+ONE])->freq;
+//				(&source_init[source_exchange])->ampli = (&source_init[source_exchange+ONE])->ampli;
+
+				source_exchange++;
+			}
+			if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
+				return ERROR_AUDIO;
+			}
+			break;
+
+		default:
+#ifdef DEBUG_AUDIO
+			chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : peak_mode invalid ! \n\r");
+#endif
+			return ERROR_AUDIO;
+	}
+	return SUCCESS_AUDIO;
+}
+
+/*
+ * @brief Calculates FFT and its amplitude of the for mic
+ * 			FFT is saved in mic_data and amplitude in mic_ampli
+ * @param[out] mic_data_xxx		4 different mic audio data clip, real sound values on which to do fft at first, and will be replaced with magnitudes and phases
+ * @param[out] mic_ampli_xxx		4 empty arrays, to store the amplitudes after fft
  */
 void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front,
 						float *mic_ampli_left, float *mic_ampli_right, float *mic_ampli_back, float *mic_ampli_front)
@@ -153,6 +414,70 @@ void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_d
 	arm_cmplx_mag_f32(mic_data_back, mic_ampli_back, FFT_SIZE);
 	arm_cmplx_mag_f32(mic_data_front, mic_ampli_front, FFT_SIZE);
 }
+
+/*===========================================================================*/
+/* Public functions for setting/getting internal parameters             */
+/*===========================================================================*/
+void audioP_init(){
+	//starts the microphones processing thread.
+	//it calls the callback given in parameter when samples are ready
+	mic_start(&processAudioData);
+}
+
+uint8_t audioP_analyseSoundPeaksFreqsAngles(void){
+	//Waits until enough sound samples are collected
+	wait_send_to_computer(); //TODOPING rename function or just reorganize code
+
+	//Copy buffer to avoid conflicts //TODOPING not useful to use getter functions anymore in here
+	arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left,
+					NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
+	arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right,
+					NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
+	arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front,
+					NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
+	arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back,
+					NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
+
+	//Calculate FFT of sound signal, stores back inside mic_data_xxx for frequencies, and mic_ampli_xxx for amplitudes
+	audioCalculateFFT(mic_data_left, mic_data_right, mic_data_back, mic_data_front,
+						mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+
+	/*Find peak intensity sources and sort them according to frequency,
+	 * returns angle of destination source but here it is not needed
+	 * NB for the first time, destination is not important, we have it uninitialized which works out */
+	{
+		Destination destination;
+		destination.index = UNINITIALIZED_INDEX;
+		destination.freq = UNINITIALIZED_FREQ;
+		destination.arg = 0;
+		audioPeak(mic_ampli_left, &destination); //we find the peaks by default on left mic data but could be any of the four mics
+	}
+
+	//we check if how many sources is an error otherwise we just return it
+	uint8_t nb_sources_tmp = audioGetNbSources();	//TODOPING we could actually incorporate the function here
+	if (nb_sources_tmp == audioGetNbSources()) {
+#ifdef DEBUG_AUDIO
+	comms_printf(UART_PORT_STREAM, "ERROR audioP_analyseSoundPeaksFreqsAngles : nb_sources_tmp not valid! \n\r");
+	chprintf((BaseSequentialStream *)&SD3, "nb_sources_tmp = %d \n\r", nb_sources_tmp);
+#endif
+		return ERROR_AUDIO;
+		/*TODOPING, for all of audio there should only be one error returned which causes total stop
+		 * main should not know of specific errors, except if it can do something about them, ex :
+		 * "audio not initialized, you need to call ..."
+		 */
+	}
+
+	return nb_sources_tmp;
+}
+
+int16_t audioP_determineSrcAngle(uint8_t source_index){
+	return audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
+}
+
+/*===========================================================================*/
+/* TODOPING old stuff to sort through             */
+/*===========================================================================*/
+
 
 uint16_t audioGetSourceFreq(uint8_t source_index)
 {
@@ -179,6 +504,7 @@ uint8_t audioGetNbSources(void)
 
 /*
  * Calculate angle of sound direction
+ * @return angle between -179° and 180° if all worked, or ERROR_AUDIO if there was an error
  */
 int16_t audioDetermineAngle(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front, uint8_t source_index)
 {
@@ -273,224 +599,8 @@ int16_t audioDeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_i
 }
 
 /*
- * Calculates NB_SOURCES peak values and sorts them after freq
- * Returns peak freq of source_index; source_index=ZERO: lowest_freq, source_index=NB_SOURCES-ONE: highest_freq
- */
-uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
-{
-	uint8_t source_counter						= ZERO;
-	uint8_t nb_sources_init						= ZERO;
-	static uint8_t nb_sources_change 			= ZERO;
-	static uint8_t nb_sources_change_counter		= ZERO;
-   	static Source source_init[NB_SOURCES_MAX];
-
-   	/*Calculate source_init arry for each mic and retrun error if they are unequal*/
-   	if(audioPeakScan(source_init, &nb_sources_init, mic_ampli_left)==ERROR_AUDIO){
-		return ERROR_AUDIO;
-	}
-
-   	/*Bubblesort: max_freq[ZERO]=smallest_freq, max_freq[NB_SOURCES]=highest_freq*/
-   	if(audioPeakBubblesort(source_init, nb_sources_init, mic_ampli_left)==ERROR_AUDIO){
-   		return ERROR_AUDIO;
-   	}
-
-
-   	if(destination->index==UNINITIALIZED_INDEX){
-		nb_sources=nb_sources_init;
-   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-   		}
-   	}
-   	else{
-   		/*If stable state is reached, write source_init into source array*/
-		if(nb_sources_init!=nb_sources_change){
-			nb_sources_change = nb_sources_init;
-			nb_sources_change_counter = NB_STAB_CYCLES;
-		}
-		else{
-			if(nb_sources_change_counter > ZERO){
-				nb_sources_change_counter--;
-			}
-			else{
-				nb_sources=nb_sources_init;
-				destination->index=UNINITIALIZED_INDEX;
-				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-					if(source_counter<nb_sources_init){
-						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){
-							destination->freq=source[source_counter].freq;
-							destination->index=source_counter;
-						}
-					}
-					else{
-						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
-					}
-				}
-
-
-				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
-	#ifdef DEBUG_AUDIO
-					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
-	#endif
-					return ERROR_AUDIO_SOURCE_NOT_FOUND;
-				}
-			}
-		}
-	}
-
-	/*Error: Peak ampli is too low*/
-	if(source_init[destination->index].ampli<AMPLI_THD){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
-#endif
-		return ERROR_AUDIO;
-	}
-
-	/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
-	if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
-#endif
-		return ERROR_AUDIO;
-	}
-
-   	/*Error: Two peak freq are two close, difference<30Hz*/
-	for(source_counter=ZERO; source_counter<nb_sources_init; source_counter++){
-   		for(uint8_t i=ZERO; i<nb_sources_init; i++){
-   			if((i!=source_counter) && (abs(source_init[source_counter].freq-source_init[i].freq)<FREQ_THD)){
-#ifdef DEBUG_AUDIO
-   				chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max freq too close ! \n\r");
-   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
-   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", i, audioConvertFreq(source_init[i].freq));
-#endif
-   				return ERROR_AUDIO;
-   			}
-   		}
-	}
-
-	return SUCCESS_AUDIO;
-}
-
-/*
- * Changing source array if necessary, array is sorted by ampli: source[0].=smallest_ampli, source[nb_sources].=biggest_ampli
- */
-int16_t audioPeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic_ampli)
-{
-	uint8_t source_counter						= ZERO;
-	uint8_t source_exchange						= ZERO;
-	uint8_t peak_mode							= ZERO;
-
-		*nb_sources_init=ZERO;
-		for(uint16_t freq_counter=HALF_FFT_SIZE; freq_counter<FFT_SIZE; freq_counter++){
-			peak_mode=PEAK_MODE_DO_NOTHING;
-			if(mic_ampli[freq_counter]>AMPLI_THD){
-				source_exchange=ZERO;
-				peak_mode=PEAK_MODE_SMALLER;
-				for(source_counter=ZERO; source_counter<*nb_sources_init; source_counter++){
-					if((freq_counter-(&source_init[source_counter])->freq)>FREQ_THD){
-						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
-							source_exchange++;
-							peak_mode=PEAK_MODE_EXCHANGE;
-						}
-					}
-					else{
-						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
-							source_exchange = source_counter;
-							peak_mode=PEAK_MODE_REPLACE;
-						}
-						else{
-							peak_mode=PEAK_MODE_DO_NOTHING;
-						}
-						break;
-					}
-				}
-			}
-
-			if(peak_mode != PEAK_MODE_DO_NOTHING){
-				if(audioPeakChange(source_exchange, freq_counter, mic_ampli, peak_mode, source_init, nb_sources_init)==ERROR_AUDIO){
-					return ERROR_AUDIO;
-				}
-			}
-		}
-
-return SUCCESS_AUDIO;
-}
-
-
-/*
- * Changes source array corresponding to peak_mode and source_exchange
- *  peak_mode=PEAK_MODE_EXCHANGE: new ampli is bigger than min one of source array
- *  		source_exchange: indicates new position
- *  peak_mode=PEAK_MODE_SMALLER: new ampli is smaller than all of source array
- *  peak_mode=PEAK_MODE_REPLACE: freq_difference<FREQ_THD and one value of source array has to be replaced
- *  		source_exchange: indicates position of replacement
- */
-int16_t audioPeakChange(int8_t source_exchange, uint16_t freq_counter, float *mic_ampli, uint8_t peak_mode, Source *source_init, uint8_t *nb_sources_init)
-{
-	uint8_t source_counter = ZERO;
-
-	if(source_exchange<ZERO){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : source_exchange not valid! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "source_exchange = %d \n\r", source_exchange);
-#endif
-		return ERROR_AUDIO;
-	}
-
-	switch(peak_mode){
-		case PEAK_MODE_EXCHANGE:
-			if(*nb_sources_init==NB_SOURCES_MAX){
-				source_exchange--;
-				for(source_counter=ZERO; source_counter<source_exchange; source_counter++){
-					if(audioPeakWriteInit(source_counter, WRITING_MODE_LOWER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-						return ERROR_AUDIO;
-					}
-
-				}
-				if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-					return ERROR_AUDIO;
-				}
-			}
-
-		case PEAK_MODE_SMALLER:
-			if(*nb_sources_init<NB_SOURCES_MAX){
-				for(source_counter=*nb_sources_init; source_counter>source_exchange; source_counter--){
-					if(audioPeakWriteInit(source_counter, WRITING_MODE_HIGHER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-						return ERROR_AUDIO;
-					}
-				}
-				if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-					return ERROR_AUDIO;
-				}
-				*nb_sources_init = *nb_sources_init + ONE;
-			}
-			break;
-
-		case PEAK_MODE_REPLACE:
-			while((source_exchange<(*nb_sources_init-1)) && (mic_ampli[freq_counter]>(&source_init[source_counter+ONE])->ampli)){
-				if(audioPeakWriteInit(source_exchange, WRITING_MODE_LOWER, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-					return ERROR_AUDIO;
-				}
-				source_exchange++;
-			}
-			if(audioPeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==ERROR_AUDIO){
-				return ERROR_AUDIO;
-			}
-			break;
-
-		default:
-#ifdef DEBUG_AUDIO
-			chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : peak_mode invalid ! \n\r");
-#endif
-			return ERROR_AUDIO;
-	}
-	return SUCCESS_AUDIO;
-}
-
-/*
  * Only fct that writes into source_init array !
+ *TODOPING this function actually does not need a pointer to mic_ampli but just amplitude of corresponding freq_counter
  */
 int16_t audioPeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16_t freq_counter, float *mic_ampli, Source *source_init)
 {

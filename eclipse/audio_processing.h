@@ -165,9 +165,29 @@ void wait_send_to_computer(void);
 */
 float* get_audio_buffer_ptr(BUFFER_NAME_t name);
 
+/*===========================================================================*/
+/* Public functions definitions             */
+/*===========================================================================*/
+
 /*
 * @brief Starts the microphones thread and audio aquisition
 */
 void audioP_init(void);
+
+/*
+ * @brief 	acquires and analyses a sound clip (FFT_SIZE samples),
+ * 				to find peaks and the corresponding frequencies and angles
+ * @return	number of sources that were found emitting typical sound, or ERROR_AUDIO if there was an error somewhere (ask user to reset)
+ */
+uint8_t audioP_analyseSoundPeaksFreqsAngles(void);
+
+/*
+ * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
+ *
+ * @param[in] source_index	index of source to find direction angle of
+ *
+ * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
+ */
+int16_t audioP_determineSrcAngle(uint8_t source_index);
 
 #endif /* AUDIO_PROCESSING_H */
