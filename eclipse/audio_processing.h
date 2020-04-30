@@ -74,8 +74,7 @@ void processAudioData(int16_t *data, uint16_t num_samples);
  * Calculates FFT and its amplitude of the for mic
  * FFT is saved in mic_data and amplitude in mic_ampli
  */
-void audioCalculateFFT(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front,
-						float *mic_ampli_left, float *mic_ampli_right, float *mic_ampli_back, float *mic_ampli_front);
+void audioCalculateFFT(float *mic_ampli_left, float *mic_ampli_right, float *mic_ampli_back, float *mic_ampli_front);
 
 /*
  * Returns freq of source: source[source_index].freq
@@ -87,11 +86,6 @@ uint16_t audioGetSourceFreq(uint8_t source_index);
  * Returns number of sources found, or if there is an error, returns ERROR_AUDIO
  */
 uint16_t audioGetNbSources(void);
-
-/*
- * Determines the direction of the sound
- */
-int16_t audioDetermineAngle(float *mic_data_left, float *mic_data_right, float *mic_data_back, float *mic_data_front, uint8_t source_index);
 
 /*
  * Determines the phase shift
@@ -160,10 +154,6 @@ uint16_t audioConvertPhase(int16_t arg, uint16_t freq);
 */
 void wait_send_to_computer(void);
 
-/*
-*	Returns the pointer to the BUFFER_NAME_t buffer asked
-*/
-float* get_audio_buffer_ptr(BUFFER_NAME_t name);
 
 /*===========================================================================*/
 /* Public functions definitions             */
@@ -179,7 +169,12 @@ void audioP_init(void);
  *
  * @return	number of sources that were found emitting typical sound, or ERROR_AUDIO if there was an error somewhere //TODOPING (ask user to reset)
  */
-uint16_t audioP_analyseSoundPeaksFreqs(void);
+uint16_t audio_analyseSpectre(void);
+
+/*
+ * Determines the direction of the sound
+ */
+int16_t audio_determineAngle(uint8_t source_index);
 
 /*
  * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
@@ -188,7 +183,7 @@ uint16_t audioP_analyseSoundPeaksFreqs(void);
  *
  * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
  */
-int16_t audioP_determineSrcAngle(uint8_t source_index);
+int16_t audio_callDetermineAngle(uint8_t source_index);
 
 /*
  * @brief get the last calculated angle for the destination source (identified by its frequency)
@@ -197,6 +192,6 @@ int16_t audioP_determineSrcAngle(uint8_t source_index);
  * 					and index if order of sources has changed
  * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
  */
-uint16_t audioP_updateDirectionIndex(Destination *destination);
+uint16_t audio_updateDirection(Destination *destination);
 
 #endif /* AUDIO_PROCESSING_H */

@@ -28,6 +28,7 @@
 //#define NB_BYTE_PER_CMPX_VAL			2
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
+#define SOURCE_NOT_FOUNF_THD			20
 
 
 //travCtrl_dirAngleCb_t updateAngle;	//TODOPING not a callback anymore
@@ -95,8 +96,8 @@ int main(void) {
 	destination.freq = UNINITIALIZED_FREQ;
 	destination.arg = 0;
 
-	//int16_t audio_peak = 0;
 	uint16_t nb_sources = 0;
+	int16_t audio_state = SUCCESS_AUDIO;
 
 	halInit();
 	chSysInit();
@@ -120,68 +121,37 @@ int main(void) {
 	while (1){
 
 		//TODOPING break down code to smaller sub functions, here could be till audioCalculateFFT
-		nb_sources=0;
-		uint16_t tempErrorAngleFreq = SUCCESS_AUDIO;
+
+		//Scanning for sources until no ERROR is returned and number of sources is not equal to zero
 		comms_printf(UART_PORT_STREAM, "Will now scan sources for display...\n\r\n\r");
-		while(nb_sources==0 || nb_sources==ERROR_AUDIO || tempErrorAngleFreq==ERROR_AUDIO){ //we want to keep checking sources until some are found
-			tempErrorAngleFreq = SUCCESS_AUDIO;
-			nb_sources = audioP_analyseSoundPeaksFreqs();	//TODOPING maybe we should change, move, tell user to do something
-			if(nb_sources!=ERROR_AUDIO){
-				for (uint8_t current_source = 0; current_source < nb_sources; current_source++) {
-					int16_t source_angle = audioP_determineSrcAngle(current_source); //audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
-					uint16_t source_freq = audioGetSourceFreq(current_source);
-					if (source_angle == ERROR_AUDIO || source_freq == ERROR_AUDIO) {
-						tempErrorAngleFreq=ERROR_AUDIO;
-					}
+		nb_sources=0;
+		audio_state = ERROR_AUDIO;
+		while(audio_state==ERROR_AUDIO){ 							//we want to keep checking sources until some are found
+			comms_printf(UART_PORT_STREAM, "main: inside first while\n\r\n\r");
+
+			audio_state = SUCCESS_AUDIO;
+			nb_sources = audio_analyseSpectre();	//TODOPING maybe we should change, move, tell user to do something
+			if(nb_sources==0 || nb_sources==ERROR_AUDIO){
+				audio_state = ERROR_AUDIO;
+				continue;
+			}
+			comms_printf(UART_PORT_STREAM, "main: after analyseSpectre\n\r\n\r");
+
+			for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+				if (audio_determineAngle(source_counter) == ERROR_AUDIO || audioGetSourceFreq(source_counter) == ERROR_AUDIO) {
+					audio_state = ERROR_AUDIO;
+					continue;
 				}
 			}
+			comms_printf(UART_PORT_STREAM, "main: after determineAngle\n\r\n\r");
 		}
 
-//		//Waits until enough sound samples are collected
-//		wait_send_to_computer(); //TODOPING rename function or just reorganize code
-//
-//		//Copy buffer to avoid conflicts
-//		arm_copy_f32(get_audio_buffer_ptr(LEFT_CMPLX_INPUT), mic_data_left,
-//				NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
-//		arm_copy_f32(get_audio_buffer_ptr(RIGHT_CMPLX_INPUT), mic_data_right,
-//				NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
-//		arm_copy_f32(get_audio_buffer_ptr(FRONT_CMPLX_INPUT), mic_data_front,
-//				NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
-//		arm_copy_f32(get_audio_buffer_ptr(BACK_CMPLX_INPUT), mic_data_back,
-//				NB_BYTE_PER_CMPX_VAL * FFT_SIZE);
-//
-//		//Calculate FFT of sound signal
-//		audioCalculateFFT(mic_data_left, mic_data_right, mic_data_back,
-//				mic_data_front, mic_ampli_left, mic_ampli_right, mic_ampli_back,
-//				mic_ampli_front);
-//
-//		/*Find peak intensity sources and sort them according to frequency,
-//		 * returns angle of destination source but here it is not needed
-//		 * NB for the first time, destination is not important, we have it uninitialized which works out */
-//		audioPeak(mic_ampli_left, &destination);
-//
-//		//get how many sources were detected, in order to present them to user for choosing
-//		nb_sources = audioGetNbSources();
-//		if (nb_sources == ERROR_AUDIO) {
-//			chprintf((BaseSequentialStream *) &SD3,
-//					"There was an error, please restart robot \n\r\n\r");
-//			/*TODOPING, for all of audio there should only be one error returned which causes total stop
-//			 * main should not know of specific errors, except if it can do something about them, ex :
-//			 * "audio not initialized, you need to call ..."
-//			 */
-//			while (1) {
-//			} //TODOPING stop everything else, create function for this
-//		}
-//		if (nb_sources > 0) { //if no sources detected we will just try again next time there is audio available //TODOPING is this behavior ok ?
-		comms_printf(UART_PORT_STREAM, "There are sources available !\n\r");
-		for (uint8_t current_source = 0; current_source < nb_sources; current_source++) {
-			int16_t source_angle = audioP_determineSrcAngle(current_source); //We have checked errors above so we are sure none are present //audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
-			uint16_t source_freq = audioGetSourceFreq(current_source);	//TODOPING find better way than calculating this two times
-//			if (source_angle == ERROR_AUDIO || source_freq == ERROR_AUDIO) {
-//				main_unhandledError();	//TODOPING this will not work, need to just try again
-//			}
-			comms_printf(UART_PORT_STREAM,"Source %d has angle =%d and frequency =%u\n\r",
-											current_source,source_angle, source_freq);
+		//Printing the available sources and their frequencies
+		comms_printf(UART_PORT_STREAM, "The following sources are available: \n\r");
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+			destination.arg = audio_determineAngle(source_counter); 								//We have checked errors above so we are sure none are present //audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
+			destination.freq = audioGetSourceFreq(source_counter);									//TODOPING find better way than calculating this two times
+			comms_printf(UART_PORT_STREAM,"Source %d :	 angle =%d 	and		 frequency =%u\n\r", source_counter, destination.arg, destination.freq);
 		}
 
 
@@ -203,86 +173,53 @@ int main(void) {
 
 		while (robotMoving == true) {
 			nb_sources=0;
-			uint16_t tempIndexErrorUpdate = ERROR_AUDIO;
-			int16_t tempAudioDirectionAngle = ERROR_AUDIO;
+			audio_state = ERROR_AUDIO;
 			uint8_t 	sourceNotFoundCounter=0;
-			while(nb_sources==0 || nb_sources==ERROR_AUDIO || tempIndexErrorUpdate==ERROR_AUDIO || tempAudioDirectionAngle == ERROR_AUDIO){ //we want to keep checking sources until good data is ready
-				nb_sources = audioP_analyseSoundPeaksFreqs();
 
-				tempIndexErrorUpdate = audioP_updateDirectionIndex(&destination);
-				if(tempIndexErrorUpdate==ERROR_AUDIO_SOURCE_NOT_FOUND){	//TODOPING maybe only do this if it is not found for many times
+			while(audio_state == ERROR_AUDIO){ //we want to keep checking sources until good data is ready
 
-					if(sourceNotFoundCounter>20){	//TODOPING create constant
-						comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
-						robotMoving = false;
-						travCtrl_stopMoving();
-						break;	//exit scanning while loop, shuld then exit robotMoving loop
-					}
-					else{
-						sourceNotFoundCounter++;
-					}
+				nb_sources = audio_analyseSpectre();
+				if(nb_sources==0 || nb_sources==ERROR_AUDIO){
+					audio_state = ERROR_AUDIO;
+					continue;
 				}
-				else{
+
+				if(audio_updateDirection(&destination) == SUCCESS_AUDIO){
 					sourceNotFoundCounter = 0;
 				}
-
-
-
-				tempAudioDirectionAngle = audioP_determineSrcAngle(destination.index);
-				if(tempAudioDirectionAngle==ERROR_AUDIO){
-					travelCtrl_goToAngle(0);
+				else if(sourceNotFoundCounter<SOURCE_NOT_FOUNF_THD){
+					sourceNotFoundCounter++;
+					audio_state = ERROR_AUDIO;
+					continue;
 				}
-				//comms_printf(UART_PORT_STREAM, "In robotMoving and scanning for sources with nb_sources=%d, tempIndexErrorUpdate=%d destination.index=%u tempAudioDirectionAngle=%d\n\r",nb_sources, tempIndexErrorUpdate, destination.index, tempAudioDirectionAngle); //DEBUG
+				else{
+					comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
+					robotMoving = false;
+					travCtrl_stopMoving();
+					break;	//exit scanning while loop, shuld then exit robotMoving loop
+				}
+
+				destination.arg = audio_determineAngle(destination.index);
+				if(destination.arg == ERROR_AUDIO){
+					audio_state = ERROR_AUDIO;
+					continue;
+				}
+
+				//TODOPING Which arg should we give to the motors?
+//				if(tempAudioDirectionAngle==ERROR_AUDIO){
+//					travelCtrl_goToAngle(0);
+//				}
+
+				//comms_printf(UART_PORT_STREAM, "robotMoving:scanning : nb_sources=%d, tempIndexErrorUpdate=%d destination.index=%u destination.freq=%u tempAudioDirectionAngle=%d\n\r",nb_sources, tempIndexErrorUpdate, destination.index, destination.freq, tempAudioDirectionAngle); //DEBUG
 			}
 
 			if(robotMoving == true){	//in case the source is not found or destination was reached withing robotMoving loop
-				travelCtrl_goToAngle(tempAudioDirectionAngle);
+				travelCtrl_goToAngle(destination.arg);
 				//comms_printf(UART_PORT_STREAM, "audioP_determineSrcAngle was called with angle=%d\n\r",tempAudioDirectionAngle); //DEBUG
 			}
-
-
-//			//audio_peak = audioPeak(mic_ampli_left, &destination);
-//			if (audio_peak == ERROR_AUDIO) {
-//#ifdef DEBUG_MAIN
-//				chprintf((BaseSequentialStream *) &SD3,
-//						"main:	Error in audioPeak\n\r\n\r");
-//#endif
-//			} else if (audio_peak == ERROR_AUDIO_SOURCE_NOT_FOUND) {
-//#ifdef DEBUG_MAIN
-//				chprintf((BaseSequentialStream *) &SD3,
-//						"main:	Error source not found ! \n\r\n\r");
-//#endif
-//			} else {
-//				if (destination.index == UNINITIALIZED_INDEX) {
-//#ifdef DEBUG_MAIN
-//					chprintf((BaseSequentialStream *) &SD3,
-//							"main:	UNINITIALIZED_INDEX\n\r\n\r");
-//#endif
-//				} else {
-//					destination.arg = audioDetermineAngle(mic_data_left,
-//							mic_data_right, mic_data_back, mic_data_front,
-//							destination.index);
-//					if (destination.arg == ERROR_AUDIO) {
-//#ifdef DEBUG_MAIN
-//						chprintf((BaseSequentialStream *) &SD3,
-//								"main:	Error in audioAnalyseDirection\n\r\n\r");
-//#endif
-//						destination.arg = 0;
-//						travelCtrl_goToAngle(destination.arg);
-//					} else {
-//#ifdef DEBUG_MAIN
-//						chprintf((BaseSequentialStream *) &SD3,
-//								"main:	Source %d :		Freq %d	:		arg  = %d\n\r",
-//								destination.index,
-//								audioConvertFreq(destination.freq),
-//								destination.arg);
-//#endif
-//						travelCtrl_goToAngle(destination.arg);
-//					}
-//				}
-//			}
 		} //end of while robotMoving
-//		} // end of if(nb_sources>0)
+
+	chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
 	} //End of infinite main thread while loop
 }
 

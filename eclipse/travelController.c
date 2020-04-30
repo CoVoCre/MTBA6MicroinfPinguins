@@ -22,15 +22,16 @@
 #include <comms.h>
 
 // From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
-// @warning do not set speed above MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION otherwise it couldn't turn !
-#define MOT_MAX_NEEDED_SPS 300
+// @warning do not set speed above MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION - MOT_MIN_SPEED_SPS otherwise it couldn't vary anymore !
+#define MOT_MAX_NEEDED_SPS 333
 
 #define MAX_DISTANCE_VALUE_MM 500 //how far in mm should robot start to slow
 #define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
 #define STOP_DISTANCE_AVERAGE_N 3 //to filter too high variations
 
 #define MOT_MAX_ANGLE_TO_CORRECT 60	// this will be the max angle in ° that the correction will still change
-#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 300 // must be less than MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS
+#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 222 // must be less than MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS
+#define MOT_MIN_SPEED_SPS 100	//we saw that under around 100steps per sercond (sps) the motors were vibrating
 //#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
 #define MOT_KP_DIFF 1	//needs >=0 value
 #define MOT_KI_DIFF 0.1 //needs >=0 value
@@ -47,7 +48,10 @@
 #define IR_CALIB_0_DISTANCE -3700 //from http://www.e-puck.org/index.php?option=com_content&view=article&id=22&Itemid=13
 #define IR_CALIB_MAX_RANGE -750 //same source, actually only somewhat linear bewteen -3700 and -1000
 
+#define EMA_WEIGHT 0.9	//Wheight for exponential moving average where needed
+
 int16_t destAngle = 0; //from -179 to +180
+int16_t ema_destAngle = 0; //to store the exponention moving average of previous destAngle values
 int16_t lastNAngles[MOT_KI_N_ANGLES] = {0}; //set all to 0
 uint16_t destDistanceMM = 0;
 uint16_t lastNdestDistanceMM[STOP_DISTANCE_AVERAGE_N] = {0};
@@ -125,7 +129,8 @@ bool proxDistanceUpdate(void){
 */
 int16_t motControllerCalculatetSpeedDiff(void){
 	int16_t motSpeedDiff = 0;
-	int16_t avgLastNAngles = 0;
+	//int16_t avgLastNAngles = 0;
+
 	int16_t tempDestAngle = destAngle;
 
 	//our controller only changes values for angles up to MOT_MAX_ANGLE_TO_CORRECT, otherwise it is the max correction applied
@@ -137,25 +142,25 @@ int16_t motControllerCalculatetSpeedDiff(void){
 		tempDestAngle = (- (int16_t) MOT_MAX_ANGLE_TO_CORRECT);
 	}
 
-	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum), and do average
-	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>=1;i--){ //1 offset because it's an array
-		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
-		avgLastNAngles+=lastNAngles[i];
-	}
-	lastNAngles[0] = tempDestAngle;
-	avgLastNAngles+=lastNAngles[0];
-	avgLastNAngles = avgLastNAngles/MOT_KI_N_ANGLES;
+//	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum), and do average
+//	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>=1;i--){ //1 offset because it's an array
+//		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
+//		avgLastNAngles+=lastNAngles[i];
+//	}
+//	lastNAngles[0] = tempDestAngle;
+//	avgLastNAngles+=lastNAngles[0];
+//	avgLastNAngles = avgLastNAngles/MOT_KI_N_ANGLES;
 
-//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * destAngle / MOT_MAX_ANGLE_TO_CORRECT
-//					+ MOT_KI_DIFF* MOT_MAX_DIFF_SPS_FOR_CORRECTION * avgLastNAngles / MOT_MAX_ANGLE_TO_CORRECT;
-	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT; //TODOPING maybe add ki again
+//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT
+				//	+ MOT_KI_DIFF* MOT_MAX_DIFF_SPS_FOR_CORRECTION * avgLastNAngles / MOT_MAX_ANGLE_TO_CORRECT;
+	motSpeedDiff = /*MOT_KP_DIFF */MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT; //TODOPING maybe add ki again, or not because not precise
 
-	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION){	//TODOPING if no ki, this is not necessary, otherwise we need to correct down if larger than wanted
-		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
-	}
-	else if( motSpeedDiff < (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION)){
-		motSpeedDiff = (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION);
-	}
+//	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION){	//TODOPING if no ki, this is not necessary, otherwise we need to correct down if larger than wanted
+//		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
+//	}
+//	else if( motSpeedDiff < (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION)){
+//		motSpeedDiff = (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION);
+//	}
 
 	//DEBUG
 	//comms_printf(UART_PORT_STREAM, "motSpeedDiff = %d for tempDestAngle=%d\n\r", motSpeedDiff, tempDestAngle);
@@ -200,13 +205,18 @@ int motControllerCalculateSpeed(void){
 void motControllerUpdate(void){
 	int16_t rightMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
 	int16_t leftMotSpeed = 0; //from -126 to +126, it is an int as in motors.h
+	static int16_t ema_rightMotSpeed = 0;	//To store the exponential moving average of motor speeds so as not to break motors changing too rapidly
+	static int16_t ema_leftMotSpeed = 0;
+	int16_t finalRightMotSpeed = 0;	//Used for the final offset speed
+	int16_t finalLeftMotSpeed = 0;
+
 	//First : control speed differential based on angle
 	int16_t motSpeedDiff = motControllerCalculatetSpeedDiff();
 	uint16_t robSpeed = 0;
 
 	// Then update speed based on distance but only if source is front of robot
-	if(-60<destAngle || destAngle<60){ //TODOPING constants !!!
-		//robSpeed = motControllerCalculateSpeed();
+	if(-60<destAngle && destAngle<60){ //TODOPING constants !!!
+		robSpeed = motControllerCalculateSpeed();
 	}
 
 
@@ -217,10 +227,36 @@ void motControllerUpdate(void){
 
 	//TESTPING not outputting values to motors because for now need to check if it works ok
 	//if(degubPrintf == true)
-	comms_printf(UART_PORT_STREAM, "New rob speeds are : Left = %d, Right=%d, distanceMM = %d, motSpeedDiff=%d\n\r", leftMotSpeed,rightMotSpeed,destDistanceMM, motSpeedDiff);
 
-	right_motor_set_speed(rightMotSpeed);
-	left_motor_set_speed(leftMotSpeed);
+
+	ema_rightMotSpeed = (int16_t) (EMA_WEIGHT*ema_rightMotSpeed+(1-EMA_WEIGHT)*rightMotSpeed);
+	ema_leftMotSpeed = (int16_t) (EMA_WEIGHT*ema_leftMotSpeed+(1-EMA_WEIGHT)*leftMotSpeed);
+
+	//We saw that when speeds were below MOT_MIN_SPEED_SPS steps per second, the motors were vibrating, so here we offset speeds
+	//Right speed offset
+	if(ema_rightMotSpeed>0){
+		finalRightMotSpeed = ema_rightMotSpeed+MOT_MIN_SPEED_SPS;
+	}
+	else if(ema_rightMotSpeed<0){
+		finalRightMotSpeed = ema_rightMotSpeed-MOT_MIN_SPEED_SPS;
+	}
+	else{
+		finalRightMotSpeed=0;
+	}
+	//Now left speed offset
+	if(ema_leftMotSpeed>0){
+		finalLeftMotSpeed = ema_leftMotSpeed+MOT_MIN_SPEED_SPS;
+	}
+	else if(ema_leftMotSpeed<0){
+		finalLeftMotSpeed = ema_leftMotSpeed-MOT_MIN_SPEED_SPS;
+	}
+	else{
+		finalLeftMotSpeed=0;
+	}
+//	comms_printf(UART_PORT_STREAM, "destAngle = %d    leftSpeed = %d,   	rightSpeed=%d,	   distanceMM = %d, 	  motSpeedDiff=%d, \n\r", destAngle, finalLeftMotSpeed,finalRightMotSpeed,destDistanceMM, motSpeedDiff);
+
+	right_motor_set_speed(finalRightMotSpeed);
+	left_motor_set_speed(finalLeftMotSpeed);
 }
 
 /*===========================================================================*/
