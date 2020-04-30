@@ -59,13 +59,13 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...);
  * 				the end char is met or the user presses enter
  *
  * @param[in] in       				stream to read from
- * @param[out] readText				pointer to uint8_t array where characters should be stored.
+ * @param[out] readText				pointer to char array where characters should be stored
  * 										\0 will be put at the end of table after reading
- * @param[in] arraySize				dictates max number of uint8_t to be read including last \0 end character
+ * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize);
+uint16_t comms_readf(BaseSequentialStream *in, char *readText, uint16_t arraySize);
 
 //TESTPING
 void comms_test_test(void);

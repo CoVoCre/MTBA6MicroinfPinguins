@@ -6,7 +6,7 @@
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Provides necessary interaction with computer for the project
- * Functions prefix for this file: comms_
+ * Functions prefix for public functions in this file: comms_
  */
 
 #include <comms.h>
@@ -88,11 +88,11 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, uint8_t *readText, uint16_t arraySize){
+uint16_t comms_readf(BaseSequentialStream *in, char *readText, uint16_t arraySize){
 	uint16_t numOfCharsRead = 0;
-	uint8_t readChar;
+	char readChar;
 
-	comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
+	//comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
 
 
 	for(uint16_t i = 0; i<arraySize-1;i++){

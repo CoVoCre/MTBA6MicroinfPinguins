@@ -1,11 +1,23 @@
+/*
+ * travelController.h
+ *
+ *  Created on: April 2, 2020
+ *      Authors: Nicolaj Schmid & Théophane Mayaud
+ * 	Project: EPFL MT BA6 penguins epuck2 project
+ *
+ * Introduction: This file deals with the control of the motors from the direction to be reached,
+ * and stops when an obstacle/the objective is reached (detection with proximity sensor).
+ */
 #ifndef AUDIO_PROCESSING_H
 #define AUDIO_PROCESSING_H
 
 /*Enable for Debugging audio_processing*/
-#define DEBUG_AUDIO
+//#define DEBUG_AUDIO
 
 #define FFT_SIZE 						1024
-#define ERROR_AUDIO						9999						//Error number
+#define ERROR_AUDIO						9999						//Error number //TODOPING there was a problem, one time we return a uint8_t so not possible
+																//as it was 9999 and this bigger than uint8_t of audioGetNbSources function
+																//so I set it to 99 as it shouldn't be that many sources !
 #define SUCCESS_AUDIO					1
 #define ERROR_AUDIO_SOURCE_NOT_FOUND		8888
 #define NB_SOURCES_MAX					5						//Max 255 sources!
@@ -41,7 +53,7 @@ typedef struct Sources {
 typedef struct Destinations {
 	uint8_t index;
 	uint16_t freq;
-	int16_t arg;
+	int16_t arg; //TODOPING is the arg still necessary ?
 } Destination;
 
 /*
@@ -74,7 +86,7 @@ uint16_t audioGetSourceFreq(uint8_t source_index);
 /*
  * Returns number of sources found, or if there is an error, returns ERROR_AUDIO
  */
-uint8_t audioGetNbSources(void);
+uint16_t audioGetNbSources(void);
 
 /*
  * Determines the direction of the sound
@@ -90,7 +102,7 @@ int16_t audioDeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_i
  * Calculates NB_SOURCES peak values and sorts them after freq
  * Returns peak freq of source_index; source_index=ZERO: lowest_freq, source_index=NB_SOURCES-ONE: highest_freq
  */
-uint16_t audioPeak(float *mic_ampli_left, Destination *destination);
+uint16_t audioPeak(float *mic_ampli_left);//, Destination *destination);
 
 /*
  * Changing source array if necessary, array is sorted by ampli: source[0].=smallest_ampli, source[nb_sources].=biggest_ampli
@@ -152,5 +164,39 @@ void wait_send_to_computer(void);
 *	Returns the pointer to the BUFFER_NAME_t buffer asked
 */
 float* get_audio_buffer_ptr(BUFFER_NAME_t name);
+
+/*===========================================================================*/
+/* Public functions definitions             */
+/*===========================================================================*/
+
+/*
+* @brief Starts the microphones thread and audio aquisition
+*/
+void audioP_init(void);
+
+/*
+ * @brief 	acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity sources and their corresponding frequencies
+ *
+ * @return	number of sources that were found emitting typical sound, or ERROR_AUDIO if there was an error somewhere //TODOPING (ask user to reset)
+ */
+uint16_t audioP_analyseSoundPeaksFreqs(void);
+
+/*
+ * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
+ *
+ * @param[in] source_index	index of source to find direction angle of
+ *
+ * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
+ */
+int16_t audioP_determineSrcAngle(uint8_t source_index);
+
+/*
+ * @brief get the last calculated angle for the destination source (identified by its frequency)
+ * @param[out] pointer to destinatin structure, where index and freq of destinatin source are.
+ * 					values might be changed, frequency will be the nearest found frequency closer than FREQ_THD,
+ * 					and index if order of sources has changed
+ * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
+ */
+uint16_t audioP_updateDirectionIndex(Destination *destination);
 
 #endif /* AUDIO_PROCESSING_H */

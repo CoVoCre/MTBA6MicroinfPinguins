@@ -28,21 +28,19 @@ typedef void (*travCtrl_destReached)(void);
 /**
  * @brief   To start the whole control.
  * @parameter [in] destReachedCallback Function pointer to callback for when destination is reached
- * @return function pointer to callback for everytime direction angle needs to be updated
 */
-travCtrl_dirAngleCb_t travCtrl_init(travCtrl_destReached travCtrl_destReachedCallback);
+void travCtrl_init(travCtrl_destReached travCtrl_destReachedCallback);
 
 /**
- * @brief   To start or stop moving.
- * @parameter [in] startGoing true or false to start or stop
+ * @brief   To stop moving until new instructions
 */
-void travCtrl_startStop(bool startGoing);
+void travCtrl_stopMoving(void);
 
-
-/*===========================================================================*/
-/* Functions for testing              */
-/*===========================================================================*/
-void travCtrl_testAll(void);
+/**
+ * @brief   Will set the motor moving towards provided angle, or if already moving will just update the direction
+ * @parameter[in] directionAngle 	direction to go to, between -179° and 180°
+*/
+void travelCtrl_goToAngle(int16_t directionAngle);
 
 
 #endif /* TRAVELCONTROLLER_H_ */
