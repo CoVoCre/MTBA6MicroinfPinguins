@@ -264,82 +264,82 @@ uint16_t audioPeak(float *mic_ampli_left, Destination *destination)
    	if(audioPeakBubblesort(source_init, nb_sources_init, mic_ampli_left)==ERROR_AUDIO){
    		return ERROR_AUDIO;
    	}
+	chprintf((BaseSequentialStream *)&SD3, "Source0 :		freq = %d \n\r", source_init[0].freq);
 
-
-   	if(destination->index==UNINITIALIZED_INDEX){
-		nb_sources=nb_sources_init;
-   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-   		}
-   	}
-   	else{
-   		/*If stable state is reached, write source_init into source array*/
-		if(nb_sources_init!=nb_sources_change){
-			nb_sources_change = nb_sources_init;
-			nb_sources_change_counter = NB_STAB_CYCLES;
-		}
-		else{
-			if(nb_sources_change_counter > ZERO){
-				nb_sources_change_counter--;
-			}
-			else{
-				nb_sources=nb_sources_init;
-				destination->index=UNINITIALIZED_INDEX;
-				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
-					if(source_counter<nb_sources_init){
-						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
-						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){
-							destination->freq=source[source_counter].freq;
-							destination->index=source_counter;
-						}
-					}
-					else{
-						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
-					}
-				}
-
-
-				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
-	#ifdef DEBUG_AUDIO
-					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
-	#endif
-					return ERROR_AUDIO_SOURCE_NOT_FOUND;
-				}
-			}
-		}
-	}
-
-	/*Error: Peak ampli is too low*/
-	if(source_init[destination->index].ampli<AMPLI_THD){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
-#endif
-		return ERROR_AUDIO;
-	}
-
-	/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
-	if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
-#endif
-		return ERROR_AUDIO;
-	}
-
-   	/*Error: Two peak freq are two close, difference<30Hz*/
-	for(source_counter=ZERO; source_counter<nb_sources_init; source_counter++){
-   		for(uint8_t i=ZERO; i<nb_sources_init; i++){
-   			if((i!=source_counter) && (abs(source_init[source_counter].freq-source_init[i].freq)<FREQ_THD)){
-#ifdef DEBUG_AUDIO
-   				chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max freq too close ! \n\r");
-   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
-   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", i, audioConvertFreq(source_init[i].freq));
-#endif
-   				return ERROR_AUDIO;
-   			}
-   		}
-	}
+//   	if(destination->index==UNINITIALIZED_INDEX){
+//		nb_sources=nb_sources_init;
+//   		for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+//   			audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+//   		}
+//   	}
+//   	else{
+//   		/*If stable state is reached, write source_init into source array*/
+//		if(nb_sources_init!=nb_sources_change){
+//			nb_sources_change = nb_sources_init;
+//			nb_sources_change_counter = NB_STAB_CYCLES;
+//		}
+//		else{
+//			if(nb_sources_change_counter > ZERO){
+//				nb_sources_change_counter--;
+//			}
+//			else{
+//				nb_sources=nb_sources_init;
+//				destination->index=UNINITIALIZED_INDEX;
+//				for(source_counter=ZERO; source_counter<NB_SOURCES_MAX; source_counter++){
+//					if(source_counter<nb_sources_init){
+//						audioPeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
+//						if(abs(destination->freq-source[source_counter].freq)<FREQ_THD){
+//							destination->freq=source[source_counter].freq;
+//							destination->index=source_counter;
+//						}
+//					}
+//					else{
+//						audioPeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
+//					}
+//				}
+//
+//
+//				if((nb_sources!=ZERO) && (destination->index==UNINITIALIZED_INDEX)){
+//	#ifdef DEBUG_AUDIO
+//					chprintf((BaseSequentialStream *)&SD3, "audioPeak: ERROR - destination freq is not anymore available! \n\r");
+//	#endif
+//					return ERROR_AUDIO_SOURCE_NOT_FOUND;
+//				}
+//			}
+//		}
+//	}
+//
+//	/*Error: Peak ampli is too low*/
+//	if(source_init[destination->index].ampli<AMPLI_THD){
+//#ifdef DEBUG_AUDIO
+//		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
+//		chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", destination->index, source_init[destination->index].ampli);
+//#endif
+//		return ERROR_AUDIO;
+//	}
+//
+//	/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
+//	if((source_init[destination->index].freq>FREQ_MIN) || (source_init[destination->index].freq<FREQ_MAX)){						//Inverse logic because freq is not in Hz!
+//#ifdef DEBUG_AUDIO
+//		chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
+//		chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", destination->index, audioConvertFreq(source_init[destination->index].freq));
+//#endif
+//		return ERROR_AUDIO;
+//	}
+//
+//   	/*Error: Two peak freq are two close, difference<30Hz*/
+//	for(source_counter=ZERO; source_counter<nb_sources_init; source_counter++){
+//   		for(uint8_t i=ZERO; i<nb_sources_init; i++){
+//   			if((i!=source_counter) && (abs(source_init[source_counter].freq-source_init[i].freq)<FREQ_THD)){
+//#ifdef DEBUG_AUDIO
+//   				chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max freq too close ! \n\r");
+//   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
+//   				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", i, audioConvertFreq(source_init[i].freq));
+//#endif
+//   				return ERROR_AUDIO;
+//   			}
+//   		}
+//	}
 
 	return SUCCESS_AUDIO;
 }
