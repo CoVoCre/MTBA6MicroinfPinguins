@@ -29,7 +29,7 @@
 #define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
 #define STOP_DISTANCE_AVERAGE_N 3 //to filter too high variations
 
-#define MOT_MAX_ANGLE_TO_CORRECT 60	// this will be the max angle in ° that the correction will still change
+#define MOT_MAX_ANGLE_TO_CORRECT 40	// this will be the max angle in ° that the correction will still change
 #define MOT_MAX_DIFF_SPS_FOR_CORRECTION 222 // must be less than MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS
 #define MOT_MIN_SPEED_SPS 100	//we saw that under around 100steps per sercond (sps) the motors were vibrating
 //#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
