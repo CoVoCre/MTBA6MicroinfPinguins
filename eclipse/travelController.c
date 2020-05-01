@@ -18,17 +18,16 @@
 
 #include <travelController.h>
 
+/*===========================================================================*/
+/* Constants definition for this file						               */
+/*===========================================================================*/
+
 /* @note MOT_MAX_NEEDED_SPS
  * motors.h library functions need a steps per second (sps) max speed of
  * 1100steps/s (MOTOR_SPEED_LIMIT). Thus, do not set MOT_MAX_NEEDED_SPS above
  * MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION - MOT_MIN_SPEED_SPS
  * otherwise the robot might not be able to turn normally, as speeds might truncate. */
 #define MOT_MAX_NEEDED_SPS 333	//Experimental value that seemed to work well
-
-#define MAX_DISTANCE_VALUE_MM 500 //how far, in mm, from an obstacle should the robot start to slow down
-#define STOP_DISTANCE_VALUE_MM 30 //how far, in mm, from an obstacle should the robot stop moving
-
-#define MOT_MAX_ANGLE_TO_CORRECT 40	// angle in ° over which the motor will not move forward, only turn, and at a constant rotating speed
 /* @note MOT_MAX_DIFF_SPS_FOR_CORRECTION
  * it is the speed in steps/s over which the controller will not go faster.  It must be less than
  * MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS */
@@ -37,11 +36,16 @@
  * we saw that under under 100steps/s the motors were vibrating, so this is the minimum speed in steps/s we will set */
 #define MOT_MIN_SPEED_SPS 100
 
+#define MAX_DISTANCE_VALUE_MM 500 //how far, in mm, from an obstacle should the robot start to slow down
+#define STOP_DISTANCE_VALUE_MM 30 //how far, in mm, from an obstacle should the robot stop moving
+
+#define MOT_MAX_ANGLE_TO_CORRECT 40	// angle in ° over which the motor will not move forward, only turn, and at a constant rotating speed
+
 #define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust motor speeds
 #define MOT_CONTROLLER_WORKING_AREA_SIZE 1024 //1024 because it was found to be enoug: less results in seg faults
 
-/*@note EMA_WEIGHT
- * We use this to calculate exponential moving averages of some values, in order to reduce
+/* @note EMA_WEIGHT
+ * We use this to calculate exponential moving averages (ema) of some values, in order to reduce
  * impact of fluctuations that are too quick to represent real changes. We calculate an ema like this :
  * emaVariable = (EMA_WEIGHT*emaVariable+(1-EMA_WEIGHT)*variable )
  * Using EMA_WEIGHT and 1-EMA_WEIGHT insures we stay withing the bounds of what values the unaveraged variable can take.
@@ -49,30 +53,36 @@
  */
 #define EMA_WEIGHT 0.9
 
+/*===========================================================================*/
+/* Static variables definitions 		 			                   */
+/*===========================================================================*/
 
-static int16_t destAngle = 0; //from -179 to +180
-//TODOPING static int16_t ema_destAngle = 0; //to store the exponention moving average of previous destAngle values
-static uint16_t emaPastDistances = 0; //We use an exponential moving average of past distance values because it was too jumpy otherwise
-static thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
+static int16_t destAngle = 0; //from -179 to +180 //TODOPING check this if -180 or -179
 
-static bool robShouldMove = false;
+/* @note emaPastDistances
+ * Exponential moving average (must be ema otherwise it is too jumpy) of past distance values, to define motor speed */
+static uint16_t emaPastDistances = 0;
 
-travCtrl_destReached destReachedFctToCall;
+static bool robShouldMove = false;	//the motor controller will only update speeds when this is true
+
+/* @note destReachedFctToCall
+ * pointer to function that is provided upon initialisation, which we call when we arrive at an obstacle */
+static travCtrl_destReached destReachedFctToCall;
 
 /*===========================================================================*/
-/* Internal functions definitions             */
+/* Private functions definitions, no comments as they are already above function code*/
 /*===========================================================================*/
-void dirAngleCb(int16_t newDestAngle);
+
 bool proxDistanceUpdate(void);
 void motControllerUpdate(void);
 int16_t motControllerCalculatetSpeedDiff(void);
 uint16_t motControllerCalculateSpeed(void);
 
 /*===========================================================================*/
-/* Private functions              */
+/* Private functions	 code												   */
 /*===========================================================================*/
 
-/* Working area for the motor controller. */
+/* Working area for the motor controller thread */
 static THD_WORKING_AREA(waMotControllerThd, MOT_CONTROLLER_WORKING_AREA_SIZE);
 /* Motor controller thread. */
 static THD_FUNCTION(MotControllerThd, arg) {
@@ -98,24 +108,24 @@ static THD_FUNCTION(MotControllerThd, arg) {
 
 /**
  * @brief   Updates the measured distance to object
- * @return  false if destination is not reached 0, true otherwise
+ * @return  true if destination is reached, false otherwise
 */
 bool proxDistanceUpdate(void){
 	//TODOPING first times gestDist is calledd returns 0 apparantly so filter those first...
 	static uint8_t testFirstGistances = 0;
 
-	bool destIsNotReached = true;
+	bool destNotReached = true;
 
 	// update filtered emaPastDistances value with newest value
 	emaPastDistances = (int16_t) (EMA_WEIGHT*emaPastDistances+(1-EMA_WEIGHT)*VL53L0X_get_dist_mm() );
 
 	testFirstGistances++;
 	if(testFirstGistances>50 && emaPastDistances <= STOP_DISTANCE_VALUE_MM ){	//TODOPING constant here !
-		destIsNotReached = false;
+		destNotReached = false;
 		testFirstGistances = 100; //TODOPING check how to remove this magic number
 	}
 
-	return destIsNotReached;
+	return destNotReached;
 }
 
 
@@ -238,7 +248,7 @@ void travCtrl_init(travCtrl_destReached destReachedCallback){
 	destReachedFctToCall = destReachedCallback;
 
 	//start of controller thread here
-	motCtrlThread = 	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
+	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
 }
 
 void travCtrl_stopMoving(){
