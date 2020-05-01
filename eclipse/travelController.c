@@ -6,7 +6,7 @@
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
- * and stops when an obstacle/the objective is reached (detection with proximity sensor).
+ * 		and stops when an obstacle/the objective is reached (detection with proximity sensor).
  *
  * Functions prefix for public functions in this file: travCtrl_
  */
@@ -167,7 +167,8 @@ int16_t motControllerCalculatetRotationSpeed(void){
 	}
 
 	/* Here we calculate the differential, in steps per second, which will always
-	 * 	between -MOT_MAX_DIFF_SPS_FOR_CORRECTION and MOT_MAX_DIFF_SPS_FOR_CORRECTION */
+	 * 	between -MOT_MAX_DIFF_SPS_FOR_CORRECTION and MOT_MAX_DIFF_SPS_FOR_CORRECTION.
+	 * 	Rounding to integer value is wanted, and not a problem as speed is in integer steps/s */
 	motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT;
 
 	return motSpeedDiff;
@@ -180,16 +181,22 @@ int16_t motControllerCalculatetRotationSpeed(void){
 uint16_t motControllerCalculateForwardSpeed(void){
 	uint16_t robSpeed = 0;	//to store the forward (common speed for both motors) in steps/s
 
-	// when distance is between min and max values, then calculate robSpeed with proportionnal controller
-	// otherwise if further than max distance, we just set max speed, or else leave 0 speed as destination is reached.
+	/* When the distance is between min and max values, then calculate robSpeed with proportionnal
+	 * controller. Otherwise if further than max distance, we just set max speed, or else leave
+	 * 0 speed as it means that an object is reached.
+	 * Rounding to integer value is wanted, and not a problem as speed is in integer steps/s */
 	if(STOP_DISTANCE_VALUE_MM <= emaPastDistances && emaPastDistances <= MAX_DISTANCE_VALUE_MM){
+
 		robSpeed = ( MOT_MAX_NEEDED_SPS * (emaPastDistances-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
-		if(robSpeed<150)	//TESTPING weird here...
-			robSpeed = 150;
+
 	}
 	else if(emaPastDistances > MAX_DISTANCE_VALUE_MM){
+
 		robSpeed = MOT_MAX_NEEDED_SPS;
+
 	}
+	/*if none of above two cases are true robSpeed is kept at 0  because
+	 * it means an object is closer than MAX_DISTANCE_VALUE_MM */
 
 	return robSpeed;
 }
@@ -209,10 +216,10 @@ void motControllerUpdateSpeeds(void){
 	// We first obtain the rotationnal (differential) speed (based on angle).
 	int16_t motSpeedDiff = motControllerCalculatetRotationSpeed();
 
-	// Then we obtain the forward (common) speed (based on distance), but only if the source (otherwise leave it 0)
+	/* Then we obtain the forward (common) speed (based on distance), but only if
+	 *  the source (otherwise leave it 0) in the 2*MOT_MAX_ANGLE_TO_CORRECT front field of view*/
 	uint16_t robForwardSpeed = 0;
-	// Then update speed based on distance but only if source is front of robot
-	if(-60<destAngle && destAngle<60){ //TODOPING constants !!!
+	if(-MOT_MAX_ANGLE_TO_CORRECT<destAngle && destAngle<MOT_MAX_ANGLE_TO_CORRECT){
 		robForwardSpeed = motControllerCalculateForwardSpeed();
 	}
 
@@ -260,29 +267,36 @@ void motControllerUpdateSpeeds(void){
 }
 
 /*===========================================================================*/
-/* Public functions for setting/getting internal parameters             */
+/* Public functions for setting/getting internal parameters					  */
+/* Descriptions  are only in the header file (to have a single source of truth) */
 /*===========================================================================*/
 
 void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer){
-	// start chibiOS modules: motor & TOF sensor
+	//Start chibiOS modules: motor & time of flight (TOF) sensor
 	motors_init();
 	VL53L0X_start();
 
-	//update file level function pointer to callback provided for when destination is reached
+	// Update file level function pointer to callback provided for when destination is reached
 	obstacleReachedCallBack = obstacleReachedCallBackPointer;
 
-	//start of controller thread here
+	/* Start of the controller thread here. We never stop the thread, only skip some code inside
+	 * it when not needed. Therefore, we do not remeber the pointer to the thread.
+	 * The priority is set to NORMALPRIO even though it is a critical taks, because
+	 * other running threads must also run for the controller to be useful, so
+	 * all threads should have the same priority as  MotControllerThd*/
 	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
-}
-
-void travCtrl_stopMoving(){
-	robShouldMove=false;
-	right_motor_set_speed(0);
-	left_motor_set_speed(0);
-
 }
 
 void travelCtrl_goToAngle(int16_t directionAngle){
 	destAngle = directionAngle;
 	robShouldMove=true;
+}
+
+void travCtrl_stopMoving(){
+	robShouldMove=false;	// This file variable makes the thread skip controller functions if false
+
+	//We need to actually stop the motors, or they will keep the last values set.
+	right_motor_set_speed(0);
+	left_motor_set_speed(0);
+
 }
