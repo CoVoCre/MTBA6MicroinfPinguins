@@ -1,49 +1,51 @@
+/*
+ * main.c
+ *
+ *  Created on: Apr 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
+ * 	Project: EPFL MT BA6 penguins epuck2 project
+ *
+ * Introduction: Main file of this project. This is a penguin simulator,
+ * 					where we will use the microphones to identify monofrequency
+ * 					sources of sound, and find their direction. The user will
+ * 					then be prompted using a serial bluetooth connection for
+ * 					which source to go to (as if each source were a chick of
+ * 					the penguin robot). Then, the robot will navigate towards
+ * 					this source/chick... Unless dangerous killer whales are heard !
+ *
+ * 	Private functions prefix for this file (except main.c) : main_
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <arm_math.h>
 
-#include <ch.h>
-#include <hal.h>
-#include <memory_protection.h>
-#include <usbcfg.h>
-#include <chprintf.h>
-#include <motors.h>
+#include <ch.h> 					//needed for chibios chibios functionnality
+#include <hal.h>					//needed also for base chibios functionnality, hardware abstraction layer specifically
+#include <memory_protection.h>	//if unauthorised access, will throw into kernel panic and blink leds to tell user
 
-#include <main.h>
+//Project libraries, for sound processing, controlling the movements and serial communication via bluetooth
 #include <audio_processing.h>
-#include <fft.h>
 #include <travelController.h>
 #include <comms.h>
 
-/*Enable for Debugging main*/
-#define DEBUG_MAIN
-
-//uncomment to send the FFTs results from the real microphones
-#define SEND_FROM_MIC
-
-//uncomment to use double buffering to send the FFT to the computer
-#define DOUBLE_BUFFERING
-
-
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
-#define SOURCE_NOT_FOUNF_THD			15
-
-
-//travCtrl_dirAngleCb_t updateAngle;	//TODOPING not a callback anymore
-//bool robotMoving = false;
-static bool robotMoving = false;			//TODOPPING does it need to be a global variable?
-
-/* Time measuring :
- * systime_t time = chVTGetSystemTime();
- *  printf("It took %d", ST2MS(time-chVTGetSystemTime() ));
- *
- */
-
+#define SOURCE_NOT_FOUND_THD			15
 
 /*===========================================================================*/
-/* Internal functions definitions of main            							*/
+/* Static, file wide defined variables                                       */
+/*===========================================================================*/
+
+/* @note robotMoving
+ * Variable that defines if the robot is currently moving or not.
+ * This is a file global variable because the main function depends on it,
+ * but a callback from travelController (destReachedCB) will update it as well.
+ */
+static bool robotMoving = false;
+
+/*===========================================================================*/
+/* Internal functions definitions of main. Descriptions are above each 		*/
+/* function code so as to have only one source of truth            			*/
 /*===========================================================================*/
 uint8_t main_scanSources(void);
 
@@ -51,10 +53,28 @@ void main_communicationUser(Destination *destination);
 
 void main_moveTowardsTarget(Destination *destination);
 
-void destReachedCB(void);
+/*===========================================================================*/
+/* Public functions code & callbacks for outside main                       */
+/*===========================================================================*/
 
+/* @brief callback function to update the state in main of robotMoving
+ * @note it is required by the travelController. It will be called when
+ * 			the library the robots arrives at an obstacle.
+ * 			The type and arguments follow the travCtrl_dirAngleCb_t type
+ */
+void destReachedCB(void)
+{
+	robotMoving = false;
+}
 
+/*===========================================================================*/
+/* -----------------------  MAIN FUNCTION OF PROJECT -----------------------*/
+/*===========================================================================*/
 
+/*
+ * @brief this is were the whole project begins, it actually never returns but
+ * 			the type int is mandatory for convention purposes
+ */
 int main(void) {
 
 	Destination destination;
@@ -62,39 +82,48 @@ int main(void) {
 	destination.freq = UNINITIALIZED_FREQ;
 	destination.arg = 0;
 
+	//Initialise chibios systems, hardware abstraction layer and memory protection
 	halInit();
 	chSysInit();
 	mpu_init();
 
+	//Start the serial communication over bluetooth
 	comms_start();
 
-	comms_printf(UART_PORT_STREAM, "Welcome to the penguin simulator!\n\r");
-	comms_printf(UART_PORT_STREAM, "Our robot will try to beat penguins at their game, p\n\r");
-	comms_printf(UART_PORT_STREAM, "that is identifying sounds of their children and going\n\r");
+	comms_printf(UART_PORT_STREAM, "Welcome to the penguin simulator!\n\r\n\r");
+	comms_printf(UART_PORT_STREAM, "Our robot will try to beat penguins at their game,\n\r");
+	comms_printf(UART_PORT_STREAM, "that is identifying sounds of their chicks and going\n\r");
 	comms_printf(UART_PORT_STREAM, "to one of them amongst many.\n\r");
-	comms_printf(UART_PORT_STREAM, "\n\rThe simulation will begin shortly...\n\r\n\r");
+	comms_printf(UART_PORT_STREAM, "You will decide which onoe the penguins goes to...\n\r\n\r");
+	comms_printf(UART_PORT_STREAM, "But be aware of killer whales... !\n\r");
 
-	//init motor controller, does not move yet, wait for angle
+	comms_printf(UART_PORT_STREAM, "\n\r\n\rThe simulation will now begin.\n\r\n\r");
+
+	// Initialise motor controller. It does not move yet, as it waits for an angle
 	travCtrl_init(destReachedCB);
 
-	//init audio module, start listening to mics and acquiring audio data
+	// Initialise audio module, which starts listening to mics and acquiring audio data
 	audioP_init();
 
 	/* Infinite main thread loop. */
 	while (1){
 
-		main_communicationUser(&destination);
+		main_communicationUser(&destination); //Scan sources and ask the user to select one... except it there is a killer whale !
 
-		main_moveTowardsTarget(&destination);
+		main_moveTowardsTarget(&destination); //Move towards the selected source, until it is reached or not found
 
 		chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
 	} //End of infinite main thread while loop
 }
 
 /*===========================================================================*/
-/* Functions of main							                                */
+/* Private functions							                                */
 /*===========================================================================*/
-
+/*
+ * @brief find all monofrequency sound sources and retries until there are no errors
+ *
+ * @return number our sources which were found
+ */
 uint8_t main_scanSources(void)
 {
 	uint16_t nb_sources 								= 0;
@@ -149,7 +178,7 @@ void main_communicationUser(Destination *destination)
 	readNumber = (uint8_t) strtol(readNumberText, &endTextReadPointer, NUM_BASE_10);
 	//TODOPING here check if it's within
 #ifdef DEBUG_MAIN
-	chprintf((BaseSequentialStream *) &SD3, "You said %u ?\n\r\n\r", readNumber);
+	comms_printf(UART_PORT_STREAM, "You said %u ?\n\r\n\r", readNumber);
 #endif
 
 	destination->index = readNumber;	//TODOPING test for crazy inputs
@@ -182,7 +211,7 @@ void main_moveTowardsTarget(Destination *destination)
 			if(audio_updateDirection(destination) == SUCCESS_AUDIO){
 				sourceNotFoundCounter = 0;
 			}
-			else if(sourceNotFoundCounter<SOURCE_NOT_FOUNF_THD){
+			else if(sourceNotFoundCounter<SOURCE_NOT_FOUND_THD){
 				sourceNotFoundCounter++;
 				audio_state = ERROR_AUDIO;
 				continue;
@@ -217,27 +246,6 @@ void main_moveTowardsTarget(Destination *destination)
 		}
 	} //end of while robotMoving
 
-}
-
-void destReachedCB(void)
-{
-	robotMoving = false;
-#ifdef DEBUG_MAIN
-	comms_printf(UART_PORT_STREAM,
-			"---------------------------------------------------------------\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"WARNING test_destReachedCB was called \n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"---------------------------------------------------------------\n\r");
-#endif // DEBUG_MAIN
 }
 
 /*===========================================================================*/
