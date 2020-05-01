@@ -25,15 +25,15 @@
 //uncomment to use double buffering to send the FFT to the computer
 #define DOUBLE_BUFFERING
 
-//#define NB_BYTE_PER_CMPX_VAL			2
+
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
-#define SOURCE_NOT_FOUNF_THD			20
+#define SOURCE_NOT_FOUNF_THD			15
 
 
 //travCtrl_dirAngleCb_t updateAngle;	//TODOPING not a callback anymore
 //bool robotMoving = false;
-bool robotMoving = false;
+bool robotMoving = false;			//TODOPPING does it need to be a global variable?
 
 /* Time measuring :
  * systime_t time = chVTGetSystemTime();
@@ -41,63 +41,28 @@ bool robotMoving = false;
  *
  */
 
-void destReachedCB(void) {
-	robotMoving = false;
-#ifdef DEBUG_MAIN
-	comms_printf(UART_PORT_STREAM,
-			"---------------------------------------------------------------\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"WARNING test_destReachedCB was called \n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"---------------------------------------------------------------\n\r");
-#endif // DEBUG_MAIN
-}
 
-void main_unhandledError(void){
-	comms_printf(UART_PORT_STREAM,
-				"---------------------------------------------------------------\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"CRITICAL ERROR please reset robot\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"-                                                             -\n\r");
-	comms_printf(UART_PORT_STREAM,
-			"---------------------------------------------------------------\n\r");
-	while(1){}
-}
+/*===========================================================================*/
+/* Internal functions definitions of main            							*/
+/*===========================================================================*/
+void main_scanSources(void);
+
+void main_communicationUser(Destination *destination);
+
+void main_moveTowardsTarget(Destination *destination);
+
+void destReachedCB(void);
+
+void main_unhandledError(void);
+
+
 
 int main(void) {
-//	//arrays used to save the state of the mic audio buffer (double buffering)
-//	//to avoid modifications of the buffer while analysing it
-//	static float mic_data_right[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
-//	static float mic_data_left[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
-//	static float mic_data_front[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
-//	static float mic_data_back[NB_BYTE_PER_CMPX_VAL * FFT_SIZE];
-//	static float mic_ampli_right[FFT_SIZE];
-//	static float mic_ampli_left[FFT_SIZE];
-//	static float mic_ampli_front[FFT_SIZE];
-//	static float mic_ampli_back[FFT_SIZE];
 
 	Destination destination;
 	destination.index = UNINITIALIZED_INDEX;
 	destination.freq = UNINITIALIZED_FREQ;
 	destination.arg = 0;
-
-	uint16_t nb_sources = 0;
-	int16_t audio_state = SUCCESS_AUDIO;
 
 	halInit();
 	chSysInit();
@@ -122,105 +87,177 @@ int main(void) {
 
 		//TODOPING break down code to smaller sub functions, here could be till audioCalculateFFT
 
-		//Scanning for sources until no ERROR is returned and number of sources is not equal to zero
-		comms_printf(UART_PORT_STREAM, "Will now scan sources for display...\n\r\n\r");
-		nb_sources=0;
-		audio_state = ERROR_AUDIO;
-		while(audio_state==ERROR_AUDIO){ 							//we want to keep checking sources until some are found
-			comms_printf(UART_PORT_STREAM, "main: inside first while\n\r\n\r");
+		main_scanSources();
 
+		main_communicationUser(&destination);
+
+		main_moveTowardsTarget(&destination);
+
+		chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
+	} //End of infinite main thread while loop
+}
+
+/*===========================================================================*/
+/* Functions of main							                                */
+/*===========================================================================*/
+
+void main_scanSources(void)
+{
+	uint16_t nb_sources 								= 0;
+	uint16_t audio_state 							= ERROR_AUDIO;
+	Destination destination_scan[NB_SOURCES_MAX]		= {0};
+
+	//Scanning for sources until no ERROR is returned and number of sources is not equal to zero
+	comms_printf(UART_PORT_STREAM, "Scanning for sources ...\n\r\n\r");
+	while(audio_state==ERROR_AUDIO){ 							//we want to keep checking sources until some are found
+
+		audio_state = SUCCESS_AUDIO;
+		nb_sources = audio_analyseSpectre();	//TODOPING maybe we should change, move, tell user to do something
+		if(nb_sources==0 || nb_sources==ERROR_AUDIO){
+			audio_state = ERROR_AUDIO;
+			continue;
+		}
+
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+			destination_scan[source_counter].arg = audio_determineAngle(source_counter);
+			destination_scan[source_counter].freq = audioGetSourceFreq(source_counter);
+			if (destination_scan[source_counter].arg == ERROR_AUDIO || destination_scan[source_counter].freq == ERROR_AUDIO) {
+				audio_state = ERROR_AUDIO;
+				break;
+			}
+		}
+	}
+
+	//Printing the available sources and their frequencies
+	comms_printf(UART_PORT_STREAM, "The following sources are available: \n\r");
+	for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {	//We have checked errors above so we are sure none are present
+		comms_printf(UART_PORT_STREAM,"Source %d :	 frequency =%u		angle =%d \n\r",
+					 source_counter, audioConvertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].arg);
+	}
+
+}
+
+void main_communicationUser(Destination *destination)
+{
+	//enter a new block (scope) to discard endTextReadPointer right after, and char array as well
+
+	char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
+	uint8_t readNumber;
+	char *endTextReadPointer; //just to satisfy strtol arguments, but not useful for us
+
+	comms_printf(UART_PORT_STREAM, "Now please enter the number of the source you want our little penguin to go to\n\r");
+	comms_readf(UART_PORT_STREAM, readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
+
+	readNumber = (uint8_t) strtol(readNumberText, &endTextReadPointer, NUM_BASE_10);
+#ifdef DEBUG_MAIN
+	chprintf((BaseSequentialStream *) &SD3, "You said %u ?\n\r\n\r", readNumber);
+#endif
+
+	destination->index = readNumber;	//TODOPING test for crazy inputs
+	destination->freq = audioGetSourceFreq(destination->index);
+}
+
+void main_moveTowardsTarget(Destination *destination)
+{
+	uint16_t nb_sources				= 0;
+	uint16_t audio_state				= ERROR_AUDIO;
+	uint8_t 	sourceNotFoundCounter	= 0;
+
+	robotMoving = true;
+
+	while (robotMoving == true) {
+
+		nb_sources = 0;
+		audio_state = ERROR_AUDIO;
+		sourceNotFoundCounter = 0;
+
+		while(audio_state == ERROR_AUDIO){ //we want to keep checking sources until good data is ready
 			audio_state = SUCCESS_AUDIO;
-			nb_sources = audio_analyseSpectre();	//TODOPING maybe we should change, move, tell user to do something
+
+			nb_sources = audio_analyseSpectre();
 			if(nb_sources==0 || nb_sources==ERROR_AUDIO){
 				audio_state = ERROR_AUDIO;
 				continue;
 			}
-			comms_printf(UART_PORT_STREAM, "main: after analyseSpectre\n\r\n\r");
 
-			for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-				if (audio_determineAngle(source_counter) == ERROR_AUDIO || audioGetSourceFreq(source_counter) == ERROR_AUDIO) {
-					audio_state = ERROR_AUDIO;
-					continue;
-				}
+			if(audio_updateDirection(destination) == SUCCESS_AUDIO){
+				sourceNotFoundCounter = 0;
 			}
-			comms_printf(UART_PORT_STREAM, "main: after determineAngle\n\r\n\r");
+			else if(sourceNotFoundCounter<SOURCE_NOT_FOUNF_THD){
+				sourceNotFoundCounter++;
+				audio_state = ERROR_AUDIO;
+				continue;
+			}
+			else{
+				comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
+				robotMoving = false;
+				travCtrl_stopMoving();
+				break;	//exit scanning while loop, should then exit robotMoving loop
+			}
+
+
+			destination->arg = audio_determineAngle(destination->index);
+			if(destination->arg == ERROR_AUDIO){
+				audio_state = ERROR_AUDIO;
+				continue;
+			}
+
+			/*TODOPING go away from the source*/
+//			if(destination->arg >= 0){
+//				destination->arg -= 180;
+//			}
+//			else{
+//				destination->arg += 180;
+//			}
+
+			comms_printf(UART_PORT_STREAM, "nb_sources=%d	 index=%u 		freq=%u 		arg=%d\n\r",nb_sources, destination->index, audioConvertFreq(destination->freq), destination->arg); //DEBUG
 		}
 
-		//Printing the available sources and their frequencies
-		comms_printf(UART_PORT_STREAM, "The following sources are available: \n\r");
-		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-			destination.arg = audio_determineAngle(source_counter); 								//We have checked errors above so we are sure none are present //audioDetermineAngle(mic_data_left, mic_data_right, mic_data_back, mic_data_front, current_source);
-			destination.freq = audioGetSourceFreq(source_counter);									//TODOPING find better way than calculating this two times
-			comms_printf(UART_PORT_STREAM,"Source %d :	 angle =%d 	and		 frequency =%u\n\r", source_counter, destination.arg, destination.freq);
+		if(robotMoving == true){	//in case the source is not found or destination was reached withing robotMoving loop
+			travelCtrl_goToAngle(destination->arg);
 		}
+	} //end of while robotMoving
 
+}
 
-		{//enter a new block (scope) to discard endTextReadPointer right after, and char array as well
-			comms_printf(UART_PORT_STREAM, "Now please enter the number of the source you want our little penguin to go to\n\r");
-			char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
-			uint8_t readNumber;
-			comms_readf(UART_PORT_STREAM, readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
-			char *endTextReadPointer; //just to satisfy strtol arguments, but not useful for us
-			readNumber = (uint8_t) strtol(readNumberText, &endTextReadPointer, NUM_BASE_10);
+void destReachedCB(void)
+{
+	robotMoving = false;
 #ifdef DEBUG_MAIN
-			chprintf((BaseSequentialStream *) &SD3, "You said %u ?\n\r\n\r", readNumber);
-#endif
-			destination.index = readNumber;	//TODOPING test for crazy inputs
-			destination.freq = audioGetSourceFreq(destination.index);
-		}
+	comms_printf(UART_PORT_STREAM,
+			"---------------------------------------------------------------\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"WARNING test_destReachedCB was called \n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"---------------------------------------------------------------\n\r");
+#endif // DEBUG_MAIN
+}
 
-		robotMoving = true;
-
-		while (robotMoving == true) {
-			nb_sources=0;
-			audio_state = ERROR_AUDIO;
-			uint8_t 	sourceNotFoundCounter=0;
-
-			while(audio_state == ERROR_AUDIO){ //we want to keep checking sources until good data is ready
-
-				nb_sources = audio_analyseSpectre();
-				if(nb_sources==0 || nb_sources==ERROR_AUDIO){
-					audio_state = ERROR_AUDIO;
-					continue;
-				}
-
-				if(audio_updateDirection(&destination) == SUCCESS_AUDIO){
-					sourceNotFoundCounter = 0;
-				}
-				else if(sourceNotFoundCounter<SOURCE_NOT_FOUNF_THD){
-					sourceNotFoundCounter++;
-					audio_state = ERROR_AUDIO;
-					continue;
-				}
-				else{
-					comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
-					robotMoving = false;
-					travCtrl_stopMoving();
-					break;	//exit scanning while loop, shuld then exit robotMoving loop
-				}
-
-				destination.arg = audio_determineAngle(destination.index);
-				if(destination.arg == ERROR_AUDIO){
-					audio_state = ERROR_AUDIO;
-					continue;
-				}
-
-				//TODOPING Which arg should we give to the motors?
-//				if(tempAudioDirectionAngle==ERROR_AUDIO){
-//					travelCtrl_goToAngle(0);
-//				}
-
-				//comms_printf(UART_PORT_STREAM, "robotMoving:scanning : nb_sources=%d, tempIndexErrorUpdate=%d destination.index=%u destination.freq=%u tempAudioDirectionAngle=%d\n\r",nb_sources, tempIndexErrorUpdate, destination.index, destination.freq, tempAudioDirectionAngle); //DEBUG
-			}
-
-			if(robotMoving == true){	//in case the source is not found or destination was reached withing robotMoving loop
-				travelCtrl_goToAngle(destination.arg);
-				//comms_printf(UART_PORT_STREAM, "audioP_determineSrcAngle was called with angle=%d\n\r",tempAudioDirectionAngle); //DEBUG
-			}
-		} //end of while robotMoving
-
-	chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
-	} //End of infinite main thread while loop
+void main_unhandledError(void)
+{
+	comms_printf(UART_PORT_STREAM,
+				"---------------------------------------------------------------\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"CRITICAL ERROR please reset robot\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"-                                                             -\n\r");
+	comms_printf(UART_PORT_STREAM,
+			"---------------------------------------------------------------\n\r");
+	while(1){}
 }
 
 /*===========================================================================*/
