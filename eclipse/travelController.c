@@ -143,6 +143,11 @@ bool updateIsObstacleReached(void){
 
 /**
  * @brief   calculates the speed differential (rotational speed) of the motors based on direction angle
+ * @note 	The angle is positive to the right. This function calculates a positive differential for a positive angle.
+ * 				To use this differential speed, when angle is positive and the robot needs to turn right, you will have
+ * 				to add this differential speed to the left motor, so it will go faster, and substract this differential
+ * 				speed to the right motor, so it will go slower. This will results in a turn in the direction wanted.
+ *
  * @return	The calculated value for the new speed differential, in steps per second,
  * 			between -MOT_MAX_DIFF_SPS_FOR_CORRECTION and MOT_MAX_DIFF_SPS_FOR_CORRECTION
 */
@@ -193,61 +198,65 @@ uint16_t motControllerCalculateForwardSpeed(void){
  * @brief   Updates the speeds of the motors based on distance and angle to obstace
 */
 void motControllerUpdateSpeeds(void){
+	//To store the exponential moving average of past motor speeds so as not to break motors changing too rapidly
+	static int16_t ema_rightMotSpeed = 0;
+	static int16_t ema_leftMotSpeed = 0;
 
+	// In steps per second, these will be used to calculate the speeds we will actually set for the motors
 	int16_t rightMotSpeed = 0;
 	int16_t leftMotSpeed = 0;
-	static int16_t ema_rightMotSpeed = 0;	//to store the exponential moving average of motor speeds so as not to break motors changing too rapidly
-	static int16_t ema_leftMotSpeed = 0;
-	int16_t finalRightMotSpeed = 0;	//Used for the final offset speed
-	int16_t finalLeftMotSpeed = 0;
 
-	//First : obtain control speed differential based on angle
+	// We first obtain the rotationnal (differential) speed (based on angle).
 	int16_t motSpeedDiff = motControllerCalculatetRotationSpeed();
-	uint16_t robSpeed = 0;
 
+	// Then we obtain the forward (common) speed (based on distance), but only if the source (otherwise leave it 0)
+	uint16_t robForwardSpeed = 0;
 	// Then update speed based on distance but only if source is front of robot
 	if(-60<destAngle && destAngle<60){ //TODOPING constants !!!
-		robSpeed = motControllerCalculateForwardSpeed();
+		robForwardSpeed = motControllerCalculateForwardSpeed();
 	}
 
+	/* The motor speeds (before filtering) are calculated with the forward speed and differential speed.
+	 * Since differential speed is positive when angle is positive and robot needs to turn right, we
+	 * add the differential speed to the left motor, so it will go faster. And we substract the differential
+	 * speed to the right motor, so it will go slower. This results in a turn in the direction needed,
+	 * either in place when the forward speed is 0, otherwise while moving forward. */
+	rightMotSpeed = (int16_t) robForwardSpeed - (int16_t) motSpeedDiff;
+	leftMotSpeed = (int16_t) robForwardSpeed + (int16_t) motSpeedDiff;
 
-	// Then actually update motor speeds
-	rightMotSpeed = (int16_t) robSpeed - (int16_t) motSpeedDiff;
-	leftMotSpeed = (int16_t) robSpeed + (int16_t) motSpeedDiff;
-
-
-	//TESTPING not outputting values to motors because for now need to check if it works ok
-	//if(degubPrintf == true)
-
-
+	//We use exponential moving average values because speeds must not be changed to fast or motors make grinding noises
 	ema_rightMotSpeed = (int16_t) (EMA_WEIGHT*ema_rightMotSpeed+(1-EMA_WEIGHT)*rightMotSpeed);
 	ema_leftMotSpeed = (int16_t) (EMA_WEIGHT*ema_leftMotSpeed+(1-EMA_WEIGHT)*leftMotSpeed);
 
-	//We saw that when speeds were below MOT_MIN_SPEED_SPS steps per second, the motors were vibrating, so here we offset speeds
-	//Right speed offset
+	/*We saw that when speeds were below MOT_MIN_SPEED_SPS steps per second,
+	 * the motors were vibrating, so here we offset xxxMotSpeed values,
+	 * first the right speed, then the left. We do this after the exponential moving average
+	 * but it is not a problem (it could be if values oscillated around 0) since we only
+	 * have values near 0 when we reach the object. Thus, the robot stops and there is
+	 * never oscillations near a speed of 0 */
 	if(ema_rightMotSpeed>0){
-		finalRightMotSpeed = ema_rightMotSpeed+MOT_MIN_SPEED_SPS;
+		rightMotSpeed = ema_rightMotSpeed+MOT_MIN_SPEED_SPS;
 	}
 	else if(ema_rightMotSpeed<0){
-		finalRightMotSpeed = ema_rightMotSpeed-MOT_MIN_SPEED_SPS;
+		rightMotSpeed = ema_rightMotSpeed-MOT_MIN_SPEED_SPS;
 	}
 	else{
-		finalRightMotSpeed=0;
+		rightMotSpeed=0;		//we set this explicitely but this case happens very rarely, just before stopping
 	}
 	//Now left speed offset
 	if(ema_leftMotSpeed>0){
-		finalLeftMotSpeed = ema_leftMotSpeed+MOT_MIN_SPEED_SPS;
+		leftMotSpeed = ema_leftMotSpeed+MOT_MIN_SPEED_SPS;
 	}
 	else if(ema_leftMotSpeed<0){
-		finalLeftMotSpeed = ema_leftMotSpeed-MOT_MIN_SPEED_SPS;
+		leftMotSpeed = ema_leftMotSpeed-MOT_MIN_SPEED_SPS;
 	}
 	else{
-		finalLeftMotSpeed=0;
+		leftMotSpeed=0;		//we set this explicitely but this case happens very rarely, just before stopping
 	}
-//	comms_printf(UART_PORT_STREAM, "destAngle = %d    leftSpeed = %d,   	rightSpeed=%d,	   distanceMM = %d, 	  motSpeedDiff=%d, \n\r", destAngle, finalLeftMotSpeed,finalRightMotSpeed,destDistanceMM, motSpeedDiff);
 
-	right_motor_set_speed(finalRightMotSpeed);
-	left_motor_set_speed(finalLeftMotSpeed);
+	//Finally, we set the motor speeds that we calculated, did the exponential moving average of and offset
+	right_motor_set_speed(rightMotSpeed);
+	left_motor_set_speed(leftMotSpeed);
 }
 
 /*===========================================================================*/
