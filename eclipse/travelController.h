@@ -13,16 +13,17 @@
 #define TRAVELCONTROLLER_H_
 
 /*
- * @brief type for callback function when destination reached
- * @note will be called when the destination has been reached
+ * @brief type for callback function when obstacle is reached
+ * @note is used to declare a pointer to a function that will be called when an obstacle has been reached.
+ * 			Use this as example for how to define the function you provide on initialisation
  */
-typedef void (*travCtrl_destReached)(void);
+typedef void (*travCtrl_obstacleReached)(void);
 
 /**
  * @brief   To start the whole controller, for later moving towards destination.
- * @parameter[in] destReachedCallback Function pointer to callback for when destination is reached
+ * @parameter[in] obstacleReachedCallBackPointer callback for when destination is reached
 */
-void travCtrl_init(travCtrl_destReached travCtrl_destReachedCallback);
+void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 
 /**
  * @brief   Will set the robot moving towards provided angle, or if already moving
