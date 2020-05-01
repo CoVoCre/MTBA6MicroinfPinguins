@@ -28,9 +28,18 @@
 #include <travelController.h>
 #include <comms.h>
 
+/*===========================================================================*/
+/* Definitions                                       */
+/*===========================================================================*/
+
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
 #define SOURCE_NOT_FOUND_THD			15
+
+/* @note MAIN__NOT_A_VALID_SOURCE
+ * There are not over 100 sources, so we use 100 as error
+ * code for when the user asks us to go to an unexisting source*/
+#define MAIN__NOT_A_VALID_SOURCE		100
 
 /*===========================================================================*/
 /* Static, file wide defined variables                                       */
@@ -129,7 +138,7 @@ uint8_t main_scanSources(void)
 	uint16_t nb_sources 								= 0;
 	uint16_t audio_state 							= ERROR_AUDIO;
 	Destination destination_scan[NB_SOURCES_MAX]		= {0};
-	//TODOPING ask before starting scan, as sources have to be available
+
 	//Scanning for sources until no ERROR is returned and number of sources is not equal to zero
 	comms_printf(UART_PORT_STREAM, "Scanning for sources ...\n\r\n\r");
 	while(audio_state==ERROR_AUDIO){ 				//we want to keep checking sources until some are found without errors
@@ -167,21 +176,42 @@ void main_communicationUser(Destination *destination)
 	//enter a new block (scope) to discard endTextReadPointer right after, and char array as well
 
 	char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
-	uint8_t readNumber;
-	char *endTextReadPointer; //just to satisfy strtol arguments, but not useful for us
-		//TODOPING around here if user presser R it re scans sources
+	uint8_t readNumber = MAIN__NOT_A_VALID_SOURCE;
+	char *endTextReadPointer; //pointer for strtol which will point to the end of the text converted to a number
+
+	//TODOPING around here if user presser R it re scans sources
 	uint8_t numberOfSourcesDetected = main_scanSources();
 
-	comms_printf(UART_PORT_STREAM, "Now please enter the number of the source you want our little penguin to go to\n\r");	//TODOPING check if it's withing number of souorcese
-	comms_readf(UART_PORT_STREAM, readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
+	while(readNumber == MAIN__NOT_A_VALID_SOURCE){
 
-	readNumber = (uint8_t) strtol(readNumberText, &endTextReadPointer, NUM_BASE_10);
-	//TODOPING here check if it's within
-#ifdef DEBUG_MAIN
-	comms_printf(UART_PORT_STREAM, "You said %u ?\n\r\n\r", readNumber);
-#endif
+		comms_printf(UART_PORT_STREAM, "Please enter the number of the source you want our little\n\r");
+		comms_printf(UART_PORT_STREAM, "penguin to go to, or enter r to rescan sources.\n\r");
+		comms_readf(UART_PORT_STREAM, readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
 
-	destination->index = readNumber;	//TODOPING test for crazy inputs
+		//If r is entered, we just start again
+		if(readNumberText[0]!='r'){
+			//Convert
+			readNumber = (uint8_t) strtol(readNumberText, &endTextReadPointer, NUM_BASE_10);
+
+			if(endTextReadPointer==readNumberText){//strtol didn't find a number as it stopped reading at the beginning
+				comms_printf(UART_PORT_STREAM, "It seems what you just typed is not a number. Please try again !\n\r");
+				readNumber = MAIN__NOT_A_VALID_SOURCE;	//We use readNumber as an error condition to ask user again
+			}
+			//We check if the value entered is actually a source, between 0 (included) and nb_sources (excluded as 0 is one of the sources)
+			else if(readNumber<numberOfSourcesDetected){
+				comms_printf(UART_PORT_STREAM, "It seems the number %u you just entered is not a valid source. Please try again !\n\r", readNumber);
+				readNumber = MAIN__NOT_A_VALID_SOURCE;	//We use readNumber as an error condition to ask user again
+			}
+		}
+		else{ //otherwise (user typed r) we leave readNumber as it is already set as not valid, but update sources
+			numberOfSourcesDetected = main_scanSources();
+		}
+	}
+
+	comms_printf(UART_PORT_STREAM, "You have selected source %u.\n\r", readNumber );
+	comms_printf(UART_PORT_STREAM, "The penguin will now go to it.\n\r");
+
+	destination->index = readNumber;
 	destination->freq = audioGetSourceFreq(destination->index);
 }
 
@@ -229,6 +259,8 @@ void main_moveTowardsTarget(Destination *destination)
 				audio_state = ERROR_AUDIO;
 				continue;
 			}
+
+			//TODOPING test if one of the sources is a killer whale !
 
 			/*TODOPING go away from the source*/
 //			if(destination->arg >= 0){
