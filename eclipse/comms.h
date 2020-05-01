@@ -1,8 +1,8 @@
 /*
  * comms.h
  *
- *  Created on: Apr 5, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Created on: Apr 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Provides necessary interaction with computer for the project
