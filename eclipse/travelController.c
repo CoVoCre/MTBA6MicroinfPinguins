@@ -1,66 +1,61 @@
 /*
  * travelController.c
  *
- *  Created on: Apr 2, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Created on: Apr 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
  * and stops when an obstacle/the objective is reached (detection with proximity sensor).
+ *
  * Functions prefix for public functions in this file: travCtrl_
  */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include <ch.h> //for threads
+#include <ch.h> //for chibios threads functionality
 
 #include <motors.h>
-#include <sensors/VL53L0X/VL53L0X.h>
+#include <sensors/VL53L0X/VL53L0X.h>	//Time of flight sensor library
 
 #include <travelController.h>
-#include <comms.h>
 
-// From motors.h library functions need steps/s max speed 1100steps/s (MOTOR_SPEED_LIMIT) but for us might need less
-// @warning do not set speed above MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION - MOT_MIN_SPEED_SPS otherwise it couldn't vary anymore !
-#define MOT_MAX_NEEDED_SPS 333
+/* @note MOT_MAX_NEEDED_SPS
+ * motors.h library functions need a steps per second (sps) max speed of
+ * 1100steps/s (MOTOR_SPEED_LIMIT). Thus, do not set MOT_MAX_NEEDED_SPS above
+ * MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_DIFF_SPS_FOR_CORRECTION - MOT_MIN_SPEED_SPS
+ * otherwise the robot might not be able to turn normally, as speeds might truncate. */
+#define MOT_MAX_NEEDED_SPS 333	//Experimental value that seemed to work well
 
-#define MAX_DISTANCE_VALUE_MM 500 //how far in mm should robot start to slow
-#define STOP_DISTANCE_VALUE_MM 30 //how far in mm should robot stop
-#define STOP_DISTANCE_AVERAGE_N 3 //to filter too high variations
+#define MAX_DISTANCE_VALUE_MM 500 //how far, in mm, from an obstacle should the robot start to slow down
+#define STOP_DISTANCE_VALUE_MM 30 //how far, in mm, from an obstacle should the robot stop moving
 
-#define MOT_MAX_ANGLE_TO_CORRECT 40	// this will be the max angle in ° that the correction will still change
-#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 222 // must be less than MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS
-#define MOT_MIN_SPEED_SPS 100	//we saw that under around 100steps per sercond (sps) the motors were vibrating
-//#define MOT_CORRECTION_EXPONENT 2.5 //can range from 1 (no less than linear) to technically anything, and with decimals
-#define MOT_KP_DIFF 1	//needs >=0 value
-#define MOT_KI_DIFF 0.1 //needs >=0 value
-#define MOT_KI_N_ANGLES 5
-#define MOT_KP_FWD 0.5 //forward speed KP needs >=0 value
-#define MOT_KI_FWD 1 //forward speed KI needs >=0 value
+#define MOT_MAX_ANGLE_TO_CORRECT 40	// angle in ° over which the motor will not move forward, only turn, and at a constant rotating speed
+/* @note MOT_MAX_DIFF_SPS_FOR_CORRECTION
+ * it is the speed in steps/s over which the controller will not go faster.  It must be less than
+ * MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS */
+#define MOT_MAX_DIFF_SPS_FOR_CORRECTION 222
+/* @note MOT_MIN_SPEED_SPS
+ * we saw that under under 100steps/s the motors were vibrating, so this is the minimum speed in steps/s we will set */
+#define MOT_MIN_SPEED_SPS 100
+
+#define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust motor speeds
+#define MOT_CONTROLLER_WORKING_AREA_SIZE 1024 //1024 because it was found to be enoug: less results in seg faults
+
+/*@note EMA_WEIGHT
+ * We use this to calculate exponential moving averages of some values, in order to reduce
+ * impact of fluctuations that are too quick to represent real changes. We calculate an ema like this :
+ * emaVariable = (EMA_WEIGHT*emaVariable+(1-EMA_WEIGHT)*variable )
+ * Using EMA_WEIGHT and 1-EMA_WEIGHT insures we stay withing the bounds of what values the unaveraged variable can take.
+ * If faster response time overall is needed, reduce this constant.
+ */
+#define EMA_WEIGHT 0.9
 
 
-#define MOT_CONTROLLER_PERIOD 10 //in ms, will be the interval at which controller thread will re-adjust control
-#define MOT_CONTROLLER_WORKING_AREA_SIZE 1024 //128 because it should be enough !
+static int16_t destAngle = 0; //from -179 to +180
+//TODOPING static int16_t ema_destAngle = 0; //to store the exponention moving average of previous destAngle values
+static uint16_t emaPastDistances = 0; //We use an exponential moving average of past distance values because it was too jumpy otherwise
+static thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
 
-#define IR_FRONT_RIGHT 0 //IR1 so sensor number 0
-#define IR_FRONT_LEFT 7 //IR8 so sensor number 7
-#define IR_CALIB_0_DISTANCE -3700 //from http://www.e-puck.org/index.php?option=com_content&view=article&id=22&Itemid=13
-#define IR_CALIB_MAX_RANGE -750 //same source, actually only somewhat linear bewteen -3700 and -1000
-
-#define EMA_WEIGHT 0.9	//Wheight for exponential moving average where needed
-
-int16_t destAngle = 0; //from -179 to +180
-int16_t ema_destAngle = 0; //to store the exponention moving average of previous destAngle values
-int16_t lastNAngles[MOT_KI_N_ANGLES] = {0}; //set all to 0
-uint16_t destDistanceMM = 0;
-uint16_t lastNdestDistanceMM[STOP_DISTANCE_AVERAGE_N] = {0};
-
-thread_t *motCtrlThread; // pointer to motor controller thread if needed to stop it TODOPING maybe remove if not necessary anymore
-
-bool robShouldMove = false;
-//TESTPING
-bool degubPrintf = true;
+static bool robShouldMove = false;
 
 travCtrl_destReached destReachedFctToCall;
 
@@ -71,7 +66,7 @@ void dirAngleCb(int16_t newDestAngle);
 bool proxDistanceUpdate(void);
 void motControllerUpdate(void);
 int16_t motControllerCalculatetSpeedDiff(void);
-int motControllerCalculateSpeed(void);
+uint16_t motControllerCalculateSpeed(void);
 
 /*===========================================================================*/
 /* Private functions              */
@@ -106,14 +101,16 @@ static THD_FUNCTION(MotControllerThd, arg) {
  * @return  false if destination is not reached 0, true otherwise
 */
 bool proxDistanceUpdate(void){
-	bool destIsNotReached = true;
-
-	destDistanceMM = VL53L0X_get_dist_mm();
-
 	//TODOPING first times gestDist is calledd returns 0 apparantly so filter those first...
 	static uint8_t testFirstGistances = 0;
+
+	bool destIsNotReached = true;
+
+	// update filtered emaPastDistances value with newest value
+	emaPastDistances = (int16_t) (EMA_WEIGHT*emaPastDistances+(1-EMA_WEIGHT)*VL53L0X_get_dist_mm() );
+
 	testFirstGistances++;
-	if(testFirstGistances>50 && destDistanceMM <= STOP_DISTANCE_VALUE_MM ){
+	if(testFirstGistances>50 && emaPastDistances <= STOP_DISTANCE_VALUE_MM ){	//TODOPING constant here !
 		destIsNotReached = false;
 		testFirstGistances = 100; //TODOPING check how to remove this magic number
 	}
@@ -142,59 +139,28 @@ int16_t motControllerCalculatetSpeedDiff(void){
 		tempDestAngle = (- (int16_t) MOT_MAX_ANGLE_TO_CORRECT);
 	}
 
-//	// shift angles to add newest obeserved one (do this here because it is at regular intervals and do sum), and do average
-//	for(uint8_t i = MOT_KI_N_ANGLES - 1; i>=1;i--){ //1 offset because it's an array
-//		lastNAngles[i] = lastNAngles[i-1]; // shift all angles (discard oldest one)
-//		avgLastNAngles+=lastNAngles[i];
-//	}
-//	lastNAngles[0] = tempDestAngle;
-//	avgLastNAngles+=lastNAngles[0];
-//	avgLastNAngles = avgLastNAngles/MOT_KI_N_ANGLES;
+	motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT;
 
-//	motSpeedDiff = MOT_KP_DIFF * MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT
-				//	+ MOT_KI_DIFF* MOT_MAX_DIFF_SPS_FOR_CORRECTION * avgLastNAngles / MOT_MAX_ANGLE_TO_CORRECT;
-	motSpeedDiff = /*MOT_KP_DIFF */MOT_MAX_DIFF_SPS_FOR_CORRECTION * tempDestAngle / MOT_MAX_ANGLE_TO_CORRECT; //TODOPING maybe add ki again, or not because not precise
-
-//	if(motSpeedDiff > MOT_MAX_DIFF_SPS_FOR_CORRECTION){	//TODOPING if no ki, this is not necessary, otherwise we need to correct down if larger than wanted
-//		motSpeedDiff = MOT_MAX_DIFF_SPS_FOR_CORRECTION;
-//	}
-//	else if( motSpeedDiff < (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION)){
-//		motSpeedDiff = (- (int16_t) MOT_MAX_DIFF_SPS_FOR_CORRECTION);
-//	}
-
-	//DEBUG
-	//comms_printf(UART_PORT_STREAM, "motSpeedDiff = %d for tempDestAngle=%d\n\r", motSpeedDiff, tempDestAngle);
 	return motSpeedDiff;
 }
 
 /**
- * @brief   Updates the speed for both motors based on distance
+ * @brief   calculates the common speed for the motors motors based on distance
  * @return 	The calculated speed for the motors in steps per second, between 0 and MOT_MAX_NEEDED_SPS
 */
-int motControllerCalculateSpeed(void){
-	int robSpeed = 0; //TODOPING why int and not uint16_t here ?
+uint16_t motControllerCalculateSpeed(void){
+	uint16_t robSpeed = 0;
 
-	// first : filter distances using KP KI controller
-	uint16_t sumLastNdestDistanceMM = 0;
-	// ---- shift last N distances in array
-	for(uint8_t i = STOP_DISTANCE_AVERAGE_N - 1; i>=1;i--){ //1 offset because it's an array
-		lastNdestDistanceMM[i] = lastNdestDistanceMM[i-1]; // shift all angles (discard oldest one)
-		sumLastNdestDistanceMM+=lastNdestDistanceMM[i];
-		}
-	lastNdestDistanceMM[0] = destDistanceMM;
-	sumLastNdestDistanceMM+=lastNdestDistanceMM[0];
-
-	// -- Calculate filtered destDistanceMM value
-	destDistanceMM = MOT_KP_FWD*destDistanceMM + MOT_KI_FWD*sumLastNdestDistanceMM;
-
-	// if in controller bounds, then calculate robSpeed with parameters
-	if(STOP_DISTANCE_VALUE_MM <= destDistanceMM && destDistanceMM <= MAX_DISTANCE_VALUE_MM){
-		robSpeed = ( MOT_MAX_NEEDED_SPS * (destDistanceMM-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
+	// when distance is between min and max values, then calculate robSpeed with proportionnal controller
+	// otherwise if further than max distance, we just set max speed, or else leave 0 speed as destination is reached.
+	if(STOP_DISTANCE_VALUE_MM <= emaPastDistances && emaPastDistances <= MAX_DISTANCE_VALUE_MM){
+		robSpeed = ( MOT_MAX_NEEDED_SPS * (emaPastDistances-STOP_DISTANCE_VALUE_MM) )/(MAX_DISTANCE_VALUE_MM-STOP_DISTANCE_VALUE_MM);
 		if(robSpeed<150)	//TESTPING weird here...
 			robSpeed = 150;
 	}
-	else if(destDistanceMM > MAX_DISTANCE_VALUE_MM)
+	else if(emaPastDistances > MAX_DISTANCE_VALUE_MM){
 		robSpeed = MOT_MAX_NEEDED_SPS;
+	}
 
 	return robSpeed;
 }
