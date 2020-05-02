@@ -64,6 +64,12 @@
 #define EQUAL							1
 #define UNEQUAL							0
 
+/* Sometimes we do not find a source, but only because of one time
+ * perturbations or noise. Therefore, we try N times before really
+ * knowing that 0 sources are present*/
+#define NO_SOURCES_RETRY_N_TIMES	10
+
+
 /*Semaphore*/
 static BSEMAPHORE_DECL(sendToComputer_sem, TRUE);
 
@@ -92,6 +98,12 @@ static uint8_t nb_sources;
 /*===========================================================================*/
 /* Internal functions definitions             */
 /*===========================================================================*/
+
+/*
+ * Returns freq of source: source[source_index].freq
+ * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
+ */
+uint16_t getSourceFreq(uint8_t source_index);
 
 /*
 *	Callback called when the demodulation of the four microphones is done.
@@ -180,32 +192,65 @@ void audioP_init(){
 	mic_start(&processAudioData);
 }
 
-uint16_t audio_analyseSpectre(void){
+uint8_t audio_findSources(Destination *destination_scan){
 	static float mic_ampli_right[FFT_SIZE];
 	static float mic_ampli_left[FFT_SIZE];
 	static float mic_ampli_front[FFT_SIZE];
 	static float mic_ampli_back[FFT_SIZE];
 
-	//Waits until enough sound samples are collected
-	audio_waitForFFTBuffer();
+	/* @note noSourcesCounter
+	 * When 0 sources are found, we do not return immediately. Instead, we retry
+	 * NO_SOURCES_RETRY_N_TIMES times until really knowing there are no more sources. */
+	uint8_t	noSourcesCounter = 0;
 
-	//Copy buffer to avoid conflicts
-	arm_copy_f32(mic_buffer_left, mic_data_left, CMPX_VAL * FFT_SIZE);
-	arm_copy_f32(mic_buffer_right, mic_data_right, CMPX_VAL * FFT_SIZE);
-	arm_copy_f32(mic_buffer_back, mic_data_back, CMPX_VAL * FFT_SIZE);
-	arm_copy_f32(mic_buffer_front, mic_data_front, CMPX_VAL * FFT_SIZE);
+	bool errorInSources = true;
+	while(errorInSources==true){
+		errorInSources=false;	//we set it back to true if we find errors
+		//Waits until enough sound samples are collected
+		audio_waitForFFTBuffer();
 
-	//Calculate FFT of sound signal, stores back inside mic_data_xxx for frequencies, and mic_ampli_xxx for amplitudes
-	audioCalculateFFT(mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+		//Copy buffer to avoid conflicts
+		arm_copy_f32(mic_buffer_left, mic_data_left, CMPX_VAL * FFT_SIZE);
+		arm_copy_f32(mic_buffer_right, mic_data_right, CMPX_VAL * FFT_SIZE);
+		arm_copy_f32(mic_buffer_back, mic_data_back, CMPX_VAL * FFT_SIZE);
+		arm_copy_f32(mic_buffer_front, mic_data_front, CMPX_VAL * FFT_SIZE);
 
-	//Left microphone is taken for the peak calculation
-	if(audioPeak(mic_ampli_left) == ERROR_AUDIO){
-		return ERROR_AUDIO;
+		//Calculate FFT of sound signal, stores back inside mic_data_xxx for frequencies, and mic_ampli_xxx for amplitudes
+		audioCalculateFFT(mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+
+		//Left microphone is taken for the peak calculation
+		if(audioPeak(mic_ampli_left)==ERROR_AUDIO){
+			errorInSources = true;
+			noSourcesCounter=0;
+			continue;	//we restart at the beginning of the while loop
+		}
+		/* When we have retried NO_SOURCES_RETRY_N_TIMES times because of 0 found sources,
+		* we know it is time to return that there are actually no sources. */
+		else if(noSourcesCounter > NO_SOURCES_RETRY_N_TIMES && nb_sources==0){
+			return nb_sources;
+		}
+		else if(nb_sources==0){	//when 0 sources are found we try again but count it
+			errorInSources = true;
+			noSourcesCounter++;
+			continue;	//we restart at the beginning of the while loop
+		}
+
+		/* For each source we calculate angles to check them, and we also check frequencies
+		 * to make sure there are no errors later. */
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+			destination_scan[source_counter].angle = audio_determineAngle(source_counter);
+			destination_scan[source_counter].freq = getSourceFreq(source_counter);
+
+			//We check for angle or frequency errors
+			if (destination_scan[source_counter].angle == ERROR_AUDIO || destination_scan[source_counter].freq == ERROR_AUDIO) {
+				errorInSources = true;
+				break;	//we break out of the for loop to restart while loop
+			}
+		}
 	}
 
 	return nb_sources;
 }
-
 
 /*
  * Calculate angle of sound direction
@@ -229,8 +274,8 @@ int16_t audio_determineAngle(uint8_t source_index)
 	}
 
 	/*Convert phase shift into angle, provide freq in Hz to audioConvertFreq*/
-	arg_dif_left_right = audioConvertPhase(arg_dif_left_right, audioConvertFreq(source[source_index].freq));
-	arg_dif_back_front = audioConvertPhase(arg_dif_back_front, audioConvertFreq(source[source_index].freq));
+	arg_dif_left_right = audioConvertPhase(arg_dif_left_right, audio_ConvertFreq(source[source_index].freq));
+	arg_dif_back_front = audioConvertPhase(arg_dif_back_front, audio_ConvertFreq(source[source_index].freq));
 
 	/*Determine plane of operation and averaging pairs of mic*/
 	if((arg_dif_left_right>=ZERO) && (arg_dif_back_front>=ZERO)){
@@ -286,14 +331,22 @@ uint16_t audio_updateDirection(Destination *destination)
 /*
  * Convert the FFT value into a real frequency [Hz]
  */
-uint16_t audioConvertFreq(uint16_t freq)
+uint16_t audio_ConvertFreq(uint16_t freq)
 {
 	freq -= HALF_FFT_SIZE;
 	freq = (int) (7798.8 - 15.221*freq);
 	return freq;
 }
 
-uint16_t audioGetSourceFreq(uint8_t source_index)
+/*===========================================================================*/
+/* Private functions              											*/
+/*===========================================================================*/
+
+/*
+ * Returns freq of source: source[source_index].freq
+ * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
+ */
+uint16_t getSourceFreq(uint8_t source_index)
 {
 #ifdef DEBUG_AUDIO
 	if((source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)){
@@ -304,11 +357,6 @@ uint16_t audioGetSourceFreq(uint8_t source_index)
 	return source[source_index].freq;
 }
 
-
-
-/*===========================================================================*/
-/* Private functions              											*/
-/*===========================================================================*/
 /*
 
 * @brief Callback for when the demodulation of the four microphones is done.

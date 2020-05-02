@@ -57,7 +57,7 @@ typedef struct Sources {	// TODOPING Should this be public ?
 typedef struct Destinations {
 	uint8_t index;
 	uint16_t freq;
-	int16_t arg;	//TODOPING change this to angle if it's just used as angle...
+	int16_t angle;	//TODOPING change this to angle if it's just used as angle...
 } Destination;
 
 
@@ -69,13 +69,6 @@ typedef struct Destinations {
 * @brief Starts the microphones thread and audio aquisition
 */
 void audioP_init(void);
-
-/*
- * @brief 	acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity sources and their corresponding frequencies
- *
- * @return	number of sources that were found emitting typical sound, or ERROR_AUDIO if there was an error somewhere //TODOPING (ask user to reset)
- */
-uint16_t audio_analyseSpectre(void);
 
 /*
  * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
@@ -95,15 +88,21 @@ int16_t audio_determineAngle(uint8_t source_index);
  */
 uint16_t audio_updateDirection(Destination *destination);
 
-/*	//TODOPING is this in hertz ?
- * Returns freq of source: source[source_index].freq
- * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
- */
-uint16_t audioGetSourceFreq(uint8_t source_index);
-
 /*
  * Converts the FFT value into a real frequency
  */
-uint16_t audioConvertFreq(uint16_t freq);
+uint16_t audio_ConvertFreq(uint16_t freq);
+
+/*
+ * @brief acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity
+ * 			sources and their corresponding frequencies and angles
+ * @note this function retries until there are no errors so afterwards you
+ * 			do not have to check for errors
+ *
+ * @param[out] destination_scan	array where found sources will be stored
+ *
+ * @return number of sources found
+ */
+uint8_t audio_findSources(Destination *destination_scan);
 
 #endif /* AUDIO_PROCESSING_H */
