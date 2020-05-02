@@ -210,7 +210,7 @@ uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan)
 		keepScanning = false; //We will set keepScanning to true if we see a killer whale
 
 		//We get the number of sources and have audio_processing store all found sources in destination_scan
-		nb_sources = audio_findSources(destination_scan);
+		nb_sources = audioP_findSources(destination_scan);
 
 		if(nb_sources==0){
 			break;
@@ -255,7 +255,7 @@ void printSources(uint8_t numberOfSourcesDetected, Destination *destination_scan
 	else{
 		for (uint8_t source_counter = 0; source_counter < numberOfSourcesDetected; source_counter++) {
 			comms_printf("Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
-					audio_ConvertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
+					audioP_convertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
 		}
 	}
 }

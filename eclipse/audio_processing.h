@@ -2,7 +2,7 @@
  * travelController.h
  *
  *  Created on: April 2, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
@@ -10,9 +10,6 @@
  */
 #ifndef AUDIO_PROCESSING_H
 #define AUDIO_PROCESSING_H
-
-/*Enable for Debugging audio_processing*/
-//#define DEBUG_AUDIO
 
 #define FFT_SIZE 						1024
 #define ERROR_AUDIO						9999						//Error number //TODOPING there was a problem, one time we return a uint8_t so not possible
@@ -71,27 +68,9 @@ typedef struct Destinations {
 void audioP_init(void);
 
 /*
- * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
- *
- * @param[in] source_index	index of source to find direction angle of
- *
- * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
- */
-int16_t audio_determineAngle(uint8_t source_index);
-
-/*
- * @brief get the last calculated angle for the destination source (identified by its frequency)
- * @param[out] pointer to destinatin structure, where index and freq of destinatin source are.
- * 					values might be changed, frequency will be the nearest found frequency closer than AUDIOP__FREQ_THD,
- * 					and index if order of sources has changed
- * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
- */
-uint16_t audio_updateDirection(Destination *destination);
-
-/*
  * Converts the FFT value into a real frequency
  */
-uint16_t audio_ConvertFreq(uint16_t freq);
+uint16_t audioP_convertFreq(uint16_t freq);
 
 /*
  * @brief acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity
@@ -103,6 +82,6 @@ uint16_t audio_ConvertFreq(uint16_t freq);
  *
  * @return number of sources found
  */
-uint8_t audio_findSources(Destination *destination_scan);
+uint8_t audioP_findSources(Destination *destination_scan);
 
 #endif /* AUDIO_PROCESSING_H */

@@ -100,6 +100,25 @@ static uint8_t nb_sources;
 /*===========================================================================*/
 
 /*
+ * @brief calculates the angle of a given source, given its index corresponding to one of previously found sources
+ *
+ * @param[in] source_index	index of source to find direction angle of
+ *
+ * @return	direction angle of source_index, between -179* and 180°, or ERROR_AUDIO if there was an error
+ */
+int16_t determineAngle(uint8_t source_index);
+
+/*
+ * @brief get the last calculated angle for the destination source (identified by its frequency)
+ * @param[out] pointer to destinatin structure, where index and freq of destinatin source are.
+ * 					values might be changed, frequency will be the nearest found frequency closer than AUDIOP__FREQ_THD,
+ * 					and index if order of sources has changed
+ * @return SUCCESS_AUDIO if all good, ERROR_AUDIO_SOURCE_NOT_FOUND if not available anymore, or ERROR_AUDIO if problem happened
+ */
+uint16_t updateDirection(Destination *destination);
+
+
+/*
  * Returns freq of source: source[source_index].freq
  * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
  */
@@ -192,7 +211,7 @@ void audioP_init(){
 	mic_start(&processAudioData);
 }
 
-uint8_t audio_findSources(Destination *destination_scan){
+uint8_t audioP_findSources(Destination *destination_scan){
 	static float mic_ampli_right[FFT_SIZE];
 	static float mic_ampli_left[FFT_SIZE];
 	static float mic_ampli_front[FFT_SIZE];
@@ -238,7 +257,7 @@ uint8_t audio_findSources(Destination *destination_scan){
 		/* For each source we calculate angles to check them, and we also check frequencies
 		 * to make sure there are no errors later. */
 		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-			destination_scan[source_counter].angle = audio_determineAngle(source_counter);
+			destination_scan[source_counter].angle = determineAngle(source_counter);
 			destination_scan[source_counter].freq = getSourceFreq(source_counter);
 
 			//We check for angle or frequency errors
@@ -253,10 +272,46 @@ uint8_t audio_findSources(Destination *destination_scan){
 }
 
 /*
+ * Convert the FFT value into a real frequency [Hz]
+ */
+uint16_t audioP_convertFreq(uint16_t freq)
+{
+	freq -= HALF_FFT_SIZE;
+	freq = (int) (7798.8 - 15.221*freq);
+	return freq;
+}
+
+/*===========================================================================*/
+/* Private functions              											*/
+/*===========================================================================*/
+
+uint16_t updateDirection(Destination *destination)
+{
+	//check if destination source is still available, and update it's param to closest match
+	for(uint8_t source_counter = 0; source_counter<nb_sources; source_counter++){
+		if(abs(destination->freq-source[source_counter].freq)<AUDIOP__FREQ_THD){ //update destination structure with close frequency source in new sources array
+																		//where we use destinatioon but it makes the whole function more complicated
+#ifdef DEBUG_AUDIO
+			if (source[source_counter].freq == ERROR_AUDIO) {
+				chprintf((BaseSequentialStream *)&SD3, "ERROR updateDirection: 	source.freq==ERROR_AUDIO! \n\r\n\r");
+				return ERROR_AUDIO;
+			}
+#endif
+			destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
+			destination->index=source_counter;
+			return SUCCESS_AUDIO;
+		}
+	}
+
+	//TODOPING what other errors should we check here ?
+	return ERROR_AUDIO_SOURCE_NOT_FOUND;
+}
+
+/*
  * Calculate angle of sound direction
  * @return angle between -179° and 180° if all worked, or ERROR_AUDIO if there was an error
  */
-int16_t audio_determineAngle(uint8_t source_index)
+int16_t determineAngle(uint8_t source_index)
 {
 	int16_t arg_dif_left_right							= ZERO;
 	int16_t arg_dif_back_front							= ZERO;
@@ -274,8 +329,8 @@ int16_t audio_determineAngle(uint8_t source_index)
 	}
 
 	/*Convert phase shift into angle, provide freq in Hz to audioConvertFreq*/
-	arg_dif_left_right = audioConvertPhase(arg_dif_left_right, audio_ConvertFreq(source[source_index].freq));
-	arg_dif_back_front = audioConvertPhase(arg_dif_back_front, audio_ConvertFreq(source[source_index].freq));
+	arg_dif_left_right = audioConvertPhase(arg_dif_left_right, audioP_convertFreq(source[source_index].freq));
+	arg_dif_back_front = audioConvertPhase(arg_dif_back_front, audioP_convertFreq(source[source_index].freq));
 
 	/*Determine plane of operation and averaging pairs of mic*/
 	if((arg_dif_left_right>=ZERO) && (arg_dif_back_front>=ZERO)){
@@ -306,41 +361,6 @@ int16_t audio_determineAngle(uint8_t source_index)
 	return ema_arg_dif[source_index];
 }
 
-uint16_t audio_updateDirection(Destination *destination)
-{
-	//check if destination source is still available, and update it's param to closest match
-	for(uint8_t source_counter = 0; source_counter<nb_sources; source_counter++){
-		if(abs(destination->freq-source[source_counter].freq)<AUDIOP__FREQ_THD){ //update destination structure with close frequency source in new sources array
-																		//where we use destinatioon but it makes the whole function more complicated
-#ifdef DEBUG_AUDIO
-			if (source[source_counter].freq == ERROR_AUDIO) {
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audio_updateDirection: 	source.freq==ERROR_AUDIO! \n\r\n\r");
-				return ERROR_AUDIO;
-			}
-#endif
-			destination->freq=source[source_counter].freq;	//update the destination frequency, which should be the same or close
-			destination->index=source_counter;
-			return SUCCESS_AUDIO;
-		}
-	}
-
-	//TODOPING what other errors should we check here ?
-	return ERROR_AUDIO_SOURCE_NOT_FOUND;
-}
-
-/*
- * Convert the FFT value into a real frequency [Hz]
- */
-uint16_t audio_ConvertFreq(uint16_t freq)
-{
-	freq -= HALF_FFT_SIZE;
-	freq = (int) (7798.8 - 15.221*freq);
-	return freq;
-}
-
-/*===========================================================================*/
-/* Private functions              											*/
-/*===========================================================================*/
 
 /*
  * Returns freq of source: source[source_index].freq
