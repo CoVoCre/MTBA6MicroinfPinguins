@@ -103,14 +103,14 @@ int main(void) {
 	//Start the serial communication over bluetooth
 	comms_start();
 
-	comms_printf(UART_PORT_STREAM, "Welcome to the penguin simulator!\n\r\n\r");
-	comms_printf(UART_PORT_STREAM, "Our robot will try to beat penguins at their game,\n\r");
-	comms_printf(UART_PORT_STREAM, "that is identifying sounds of their chicks and going\n\r");
-	comms_printf(UART_PORT_STREAM, "to one of them amongst many.\n\r");
-	comms_printf(UART_PORT_STREAM, "You will decide which onoe the penguins goes to...\n\r\n\r");
-	comms_printf(UART_PORT_STREAM, "But be aware of killer whales... !\n\r");
+	comms_printf("Welcome to the penguin simulator!\n\r\n\r");
+	comms_printf("Our robot will try to beat penguins at their game,\n\r");
+	comms_printf("that is identifying sounds of their chicks and going\n\r");
+	comms_printf( "to one of them amongst many.\n\r");
+	comms_printf( "You will decide which onoe the penguins goes to...\n\r\n\r");
+	comms_printf( "But be aware of killer whales... !\n\r");
 
-	comms_printf(UART_PORT_STREAM, "\n\r\n\rThe simulation will now begin.\n\r\n\r");
+	comms_printf( "\n\r\n\rThe simulation will now begin.\n\r\n\r");
 
 	// Initialise motor controller. It does not move yet, as it waits for an angle
 	travCtrl_init(destReachedCB);
@@ -158,9 +158,9 @@ void communicationUser(Destination *destination) {
 	//we ask the user for a number or r (rescan), and keep asking until the the input is valid
 	while(keepAsking == true){
 
-		comms_printf(UART_PORT_STREAM, "Please enter the number of the source you want our little\n\r");
-		comms_printf(UART_PORT_STREAM, "penguin to go to, or enter r to rescan sources.\n\r");
-		comms_readf(UART_PORT_STREAM, readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
+		comms_printf( "Please enter the number of the source you want our little\n\r");
+		comms_printf( "penguin to go to, or enter r to rescan sources.\n\r");
+		comms_readf( readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
 
 		//If r isn't entered, we try to interpret the number entered
 		if(readNumberText[0]!='r'){
@@ -171,14 +171,14 @@ void communicationUser(Destination *destination) {
 			 * one of the sources, or it wasn't one of the sources (also if no source is available and
 			 * user didn't press r) */
 			if(endTextReadPointer==readNumberText){//strtol didn't find a number as it stopped reading at the beginning
-				comms_printf(UART_PORT_STREAM, "It seems what you just typed is not a number. Please try again !\n\r");
+				comms_printf( "It seems what you just typed is not a number. Please try again !\n\r");
 			}
 			//We check if the value entered is actually a source, between 0 (excluded) and nb_sources (excluded)
 			else if(readNumber < numberOfSourcesDetected){
 				keepAsking = false;	//Here we will actually have a good source
 			}
 			else{	//the number wasn't a valid source or there were 0 sources available and user didn't press r
-				comms_printf(UART_PORT_STREAM, "It seems the number %u you just entered is not a valid source. Please try again !\n\r", readNumber);
+				comms_printf( "It seems the number %u you just entered is not a valid source. Please try again !\n\r", readNumber);
 			}
 		}
 		else{ //otherwise (user typed r) we rescan
@@ -203,7 +203,7 @@ uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan)
 {
 	uint16_t nb_sources = 0;
 	bool keepScanning = true;
-	comms_printf(UART_PORT_STREAM, "Scanning for sources ...\n\r");
+	comms_printf( "Scanning for sources ...\n\r");
 
 	//We scan until there are no killer whales
 	while(keepScanning==true){
@@ -222,7 +222,7 @@ uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan)
 			if(KILLER_WHALE_FREQ_LOW < destination_scan[source_counter].freq && destination_scan[source_counter].freq < KILLER_WHALE_FREQ_HIGH ){
 
 				keepScanning=true;
-				comms_printf(UART_PORT_STREAM, "Oh nooooooo... There is a killer whale 🐋 and I'm leaaaaaviiiiing !!!!\n\r");
+				comms_printf( "Oh nooooooo... There is a killer whale 🐋 and I'm leaaaaaviiiiing !!!!\n\r");
 
 				//We invert the angle (+/- 180°) of the killer whale direction and set the robot to it
 				if(destination_scan[source_counter].angle >=0){
@@ -247,14 +247,14 @@ uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan)
 void printSources(uint8_t numberOfSourcesDetected, Destination *destination_scan){
 	/* Printing the available sources and their frequencies.
 	 * When we get here we are sure there are no more errors and killer whales, so we do not check anymore */
-	comms_printf(UART_PORT_STREAM, "The following sources are available: \n\r");
+	comms_printf( "The following sources are available: \n\r");
 	if(numberOfSourcesDetected==0){
-		comms_printf(UART_PORT_STREAM,"    ...No sources we found...\n\r");
+		comms_printf("    ...No sources we found...\n\r");
 
 	}
 	else{
 		for (uint8_t source_counter = 0; source_counter < numberOfSourcesDetected; source_counter++) {
-			comms_printf(UART_PORT_STREAM,"Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
+			comms_printf("Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
 					audio_ConvertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
 		}
 	}
@@ -301,7 +301,7 @@ void moveTowardsTarget(Destination *destination)
 		 * we stop moving towards the source and thus exit the while loop.
 		 * If 0 sources are found it also means the source is not available */
 		if(isDestinationStillHere==false || nb_sources==0){
-			comms_printf(UART_PORT_STREAM, "The source you selected is not available anymore, please select a new one.\n\r");
+			comms_printf( "The source you selected is not available anymore, please select a new one.\n\r");
 			robotMoving = false;
 			travCtrl_stopMoving();
 			break;	//exit robot moving while loop

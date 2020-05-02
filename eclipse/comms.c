@@ -71,12 +71,11 @@ void comms_start(void)
  *                      written to @p chp if no stream error occurs
  */
 int comms_printf(const char *fmt, ...) {
-	BaseSequentialStream *chp = UART_PORT_STREAM;
 	va_list ap;
 	int formatted_bytes;
 
 	va_start(ap, fmt);
-	formatted_bytes = chvprintf(chp, fmt, ap);
+	formatted_bytes = chvprintf(UART_PORT_STREAM, fmt, ap);
 	va_end(ap);
 
 	return formatted_bytes;
@@ -96,23 +95,22 @@ int comms_printf(const char *fmt, ...) {
  *@return	Number of chars read and stored in array (not counting \0)
  */
 uint16_t comms_readf(char *readText, uint16_t arraySize){
-	BaseSequentialStream *in = UART_PORT_STREAM;
 	uint16_t numOfCharsRead = 0;
 	char readChar;
 
 	for(uint16_t i = 0; i<arraySize-1;i++){
-		readChar = chSequentialStreamGet(in);
+		readChar = chSequentialStreamGet(UART_PORT_STREAM);
 		switch(readChar){
 		case '\n': //for either \n or \n end string and return
 		case '\r':
 			readText[i] = '\0';
-			comms_printf(in," \n\r");
+			comms_printf(" \n\r");
 			return numOfCharsRead = i-1;	// we do not count \0
 		case 127:	//ASCII special delete character
 				readText[i-1] = '\0';
 				readText[i] = '\0';
 				i-=1;
-				comms_printf(in,"\r                                   \r%s",readText);	//erase line
+				comms_printf("\r                                   \r%s",readText);	//erase line
 			break;
 		default:
 			//We protect against special ASCII characters so we do nothing for them
@@ -120,11 +118,11 @@ uint16_t comms_readf(char *readText, uint16_t arraySize){
 				readText[i] = readChar;
 				readText[i+1]= '\0';
 				//we erase line before writing because comms_printf adds space between characters otherwise
-				comms_printf(in,"\r                                    \r%s",readText);
+				comms_printf("\r                                    \r%s",readText);
 			}
 		}
 	}
 
-	comms_printf(in," \n\r");
+	comms_printf(" \n\r");
 	return numOfCharsRead;
 }
