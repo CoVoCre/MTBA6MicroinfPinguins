@@ -15,13 +15,8 @@
 #include <hal.h>
 #include <chprintf.h>
 
-#define USB_PORT SDU1
-#define UART_PORT SD3
-#define USB_PORT_STREAM ((BaseSequentialStream *)&USB_PORT)
-#define UART_PORT_STREAM ((BaseSequentialStream *)&UART_PORT)
-
 /**
- * @brief   starts all communication things
+ * @brief   starts all communication processes
  */
 void comms_start(void);
 
@@ -43,13 +38,12 @@ void comms_start(void);
  *          - <b>c</b> character.
  *          - <b>s</b> string.
  *
- * @param[in] chp       pointer to a @p BaseSequentialStream implementing object
  * @param[in] fmt       formatting string
  *
  *@return              The number of bytes that would have been
  *                      written to @p chp if no stream error occurs
  */
-int comms_printf(BaseSequentialStream *chp, const char *fmt, ...);
+int comms_printf(const char *fmt, ...);
 
 /**
  * @brief  	read from  USB_PORT or UART_PORT and store in char array
@@ -58,17 +52,13 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...);
  * @warning	this function is blocking for the calling thread until either
  * 				the end char is met or the user presses enter
  *
- * @param[in] in       				stream to read from
  * @param[out] readText				pointer to char array where characters should be stored
  * 										\0 will be put at the end of table after reading
  * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, char *readText, uint16_t arraySize);
-
-//TESTPING
-void comms_test_test(void);
+uint16_t comms_readf(char *readText, uint16_t arraySize);
 
 
 #endif /* COMMS_H_ */
