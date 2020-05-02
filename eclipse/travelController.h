@@ -1,46 +1,48 @@
 /*
  * travelController.h
  *
- *  Created on: April 2, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Created on: April 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
- * and stops when an obstacle/the objective is reached (detection with proximity sensor).
+ * 		and stops when an obstacle/the objective is reached (detection with proximity sensor).
  */
 
 #ifndef TRAVELCONTROLLER_H_
 #define TRAVELCONTROLLER_H_
 
-#include <stdio.h>
+/*
+ * @brief type for callback function when obstacle is reached
+ * @note is used to declare a pointer to a function that will be called when an obstacle has been reached.
+ * 			Use this as and example for how to define the function you provide on initialisation
+ */
+typedef void (*travCtrl_obstacleReached)(void);
 
-/* @brief type for callback function in order to give new direction angle
-* @note this is a pointer type, to a travCtrl_dirAngleCb_t type function
-*   can be called from the pointer by using standard ()
-* @parameter [in] give an integer value between -179 to +180°
+/*===========================================================================*/
+/* Public functions definitions and descriptions							*/
+/*===========================================================================*/
+
+/*
+ * @brief   To start the whole controller, for later moving towards destination.
+ *
+ * @parameter[in] obstacleReachedCallBackPointer callback for when an obstacle
+ * 						is reached and the robot stops.
 */
-typedef void (*travCtrl_dirAngleCb_t)(int16_t);
+void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 
-// @brief type for callback function when destination reached
-// @note will be called when the destination has been reached
-typedef void (*travCtrl_destReached)(void);
-
-/**
- * @brief   To start the whole control.
- * @parameter [in] destReachedCallback Function pointer to callback for when destination is reached
-*/
-void travCtrl_init(travCtrl_destReached travCtrl_destReachedCallback);
-
-/**
- * @brief   To stop moving until new instructions
-*/
-void travCtrl_stopMoving(void);
-
-/**
- * @brief   Will set the motor moving towards provided angle, or if already moving will just update the direction
- * @parameter[in] directionAngle 	direction to go to, between -179° and 180°
+/*
+ * @brief   Sets the robot moving towards provided angle, or if already moving
+ * 				it will just update the direction of movement
+ *
+ * @parameter[in] directionAngle 	direction to go to, between -180° and 180°
 */
 void travelCtrl_goToAngle(int16_t directionAngle);
+
+/*
+ * @brief   stops all movements until a new angle is given with travelCtrl_goToAngle
+*/
+void travCtrl_stopMoving(void);
 
 
 #endif /* TRAVELCONTROLLER_H_ */
