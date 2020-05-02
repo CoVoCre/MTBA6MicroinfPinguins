@@ -59,7 +59,7 @@
 #define DISCARD_FIRST_N_TOF_MEASURES 50
 
 /*===========================================================================*/
-/* Static variables definitions 		 			                   */
+/* Static variables definitions 		 			                            */
 /*===========================================================================*/
 
 static int16_t destAngle = 0; //from -180 to +180
