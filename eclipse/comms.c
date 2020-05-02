@@ -1,11 +1,13 @@
 /*
  * comms.c
  *
- *  Created on: Apr 5, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Created on: Apr 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Provides necessary interaction with computer for the project
+ * 		this outputs via serial UART, which means either bluetooth or usb
+ *
  * Functions prefix for public functions in this file: comms_
  */
 
@@ -13,11 +15,19 @@
 #include <usbcfg.h>
 #include <chstreams.h>
 
-static bool comms_started = false;
+//We redefine chibios elements for facilitated usage
+#define UART_PORT SD3
+#define UART_PORT_STREAM ((BaseSequentialStream *)&UART_PORT)
 
-//chprintf((BaseSequentialStream *)&SD3, "%Ax=%-7d Ay=%-7d Az=%-7d Gx=%-7d Gy=%-7d Gz=%-7d\r\n",
-//                imu_values.acc_raw[X_AXIS], imu_values.acc_raw[Y_AXIS], imu_values.acc_raw[Z_AXIS],
-//                imu_values.gyro_raw[X_AXIS], imu_values.gyro_raw[Y_AXIS], imu_values.gyro_raw[Z_AXIS]);
+/*
+ * From https://upload.wikimedia.org/wikipedia/commons/d/dd/ASCII-Table.svg
+ * we define the different bounds and characters needed
+ */
+#define ASCII_NORMAL_TEXT_BEGIN 	33
+#define ASCII_NORMAL_TEXT_END 	126
+#define ASCII_DELETE_CHARACTER	127
+
+static bool comms_started = false;
 
 /**
  * @brief   starts all communication things
@@ -34,8 +44,6 @@ void comms_start(void)
 
 			//starts the serial communication on UART
 			sdStart(&UART_PORT, &ser_cfg);
-			//start the USB communication
-			usb_start();
 	}
 	comms_started = true;
 }
@@ -57,18 +65,17 @@ void comms_start(void)
  *          - <b>c</b> character.
  *          - <b>s</b> string.
  *
- * @param[in] chp       pointer to a @p BaseSequentialStream implementing object
  * @param[in] fmt       formatting string
  *
  *@return              The number of bytes that would have been
  *                      written to @p chp if no stream error occurs
  */
-int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
+int comms_printf(const char *fmt, ...) {
 	va_list ap;
 	int formatted_bytes;
 
 	va_start(ap, fmt);
-	formatted_bytes = chvprintf(chp, fmt, ap);
+	formatted_bytes = chvprintf(UART_PORT_STREAM, fmt, ap);
 	va_end(ap);
 
 	return formatted_bytes;
@@ -81,56 +88,41 @@ int comms_printf(BaseSequentialStream *chp, const char *fmt, ...) {
  * @warning	this function is blocking for the calling thread until either
  * 				the end char is met or the user presses enter
  *
- * @param[in] in       				stream to read from
  * @param[out] readText				pointer to char array where characters should be stored
  * 										\0 will be put at the end of table after reading
  * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
  *
  *@return	Number of chars read and stored in array (not counting \0)
  */
-uint16_t comms_readf(BaseSequentialStream *in, char *readText, uint16_t arraySize){
+uint16_t comms_readf(char *readText, uint16_t arraySize){
 	uint16_t numOfCharsRead = 0;
 	char readChar;
 
-	//comms_printf(UART_PORT_STREAM, "In comms_readf\n\r");
-
-
 	for(uint16_t i = 0; i<arraySize-1;i++){
-		readChar = chSequentialStreamGet(in);
+		readChar = chSequentialStreamGet(UART_PORT_STREAM);
 		switch(readChar){
-		case '\n': //for either \n or \n end and return
+		case '\n': //for either \n or \n end string and return
 		case '\r':
 			readText[i] = '\0';
-			comms_printf(in," \n\r");
+			comms_printf(" \n\r");
 			return numOfCharsRead = i-1;	// we do not count \0
-		case 127:
+		case 127:	//ASCII special delete character
 				readText[i-1] = '\0';
 				readText[i] = '\0';
 				i-=1;
-				comms_printf(in,"\r                                                                          \r%s",readText);
+				comms_printf("\r                                   \r%s",readText);	//erase line
 			break;
 		default:
-			readText[i] = readChar;
-			readText[i+1]= '\0';
-			comms_printf(in,"\r                                                                          \r%s",readText);
+			//We protect against special ASCII characters so we do nothing for them
+			if( ASCII_NORMAL_TEXT_BEGIN <= readChar && readChar <= ASCII_NORMAL_TEXT_BEGIN){
+				readText[i] = readChar;
+				readText[i+1]= '\0';
+				//we erase line before writing because comms_printf adds space between characters otherwise
+				comms_printf("\r                                    \r%s",readText);
+			}
 		}
 	}
 
-	comms_printf(in," \n\r");
+	comms_printf(" \n\r");
 	return numOfCharsRead;
-}
-
-//TESTPING
-void comms_test_test(void){
-	comms_printf(UART_PORT_STREAM, "In comms_test_test\n\r");
-	uint8_t testChar = 'T';
-	comms_printf(UART_PORT_STREAM,"First %c\n\r",testChar);
-	testChar = 'E';
-	comms_printf(UART_PORT_STREAM,"Second %c\n\r",testChar);
-	testChar = 'S';
-	chprintf(UART_PORT_STREAM,"%c ",testChar);
-	testChar = 'T';
-	chprintf(UART_PORT_STREAM,"Next %c ",testChar);
-	testChar = '\r';
-	chprintf(UART_PORT_STREAM,"%c ",testChar);
 }
