@@ -39,10 +39,11 @@ type functionName(type name_of_variable1, type name_of_variable2, type out_varia
  * fileName.extension
  *
  *  Created on: Month numDay, numYear
- *      Authors: Nicolaj Schmid & Théophane Mayaud
- * 	Project: EPFL MT BA6 penguins epuck2 project
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Description of the file if necessary
+ *
  * Functions prefix for this file: prefixExample
  */
 
@@ -51,8 +52,8 @@ type functionName(type name_of_variable1, type name_of_variable2, type out_varia
  * fileName.extension
  *
  *  Created on: Month numDay, numYear
- *      Authors: Nicolaj Schmid & Théophane Mayaud
- * 	Project: EPFL MT BA6 penguins epuck2 project
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Description of the file if necessary
  */
