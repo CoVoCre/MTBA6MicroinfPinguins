@@ -1,7 +1,7 @@
 /*
  * travelController.h
  *
- *  Created on: April 2, 2020
+ *  Created on: April 1, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -17,6 +17,7 @@
 																//so I set it to 99 as it shouldn't be that many sources !
 #define SUCCESS_AUDIO					1	//TODOPING are those defines all useful in other files ? For global defines maybe use AUDIOP__ in front ?
 #define ERROR_AUDIO_SOURCE_NOT_FOUND		8888
+#define KILLER_WHALE_DETECTED			6666
 #define AUDIOP__NB_SOURCES_MAX			5						//Max 255 sources!
 #define AUDIOP__UNINITIALIZED_FREQ		0
 #define AUDIOP__UNINITIALIZED_INDEX		255
@@ -25,18 +26,8 @@
 
 #define AUDIOP__HZ_TO_FFT_FREQ(hz) 		( (10241000-656*hz)/10000 )
 
-typedef enum {
-	//2 times FFT_SIZE because these arrays contain complex numbers (real + imaginary)
-	LEFT_CMPLX_INPUT = 0,
-	RIGHT_CMPLX_INPUT,
-	FRONT_CMPLX_INPUT,
-	BACK_CMPLX_INPUT,
-	//Arrays containing the computed magnitude of the complex numbers
-	LEFT_OUTPUT,
-	RIGHT_OUTPUT,
-	FRONT_OUTPUT,
-	BACK_OUTPUT
-} BUFFER_NAME_t;
+//#define AUDIOP__KILLER_WHALE_FREQ_LOW AUDIOP__HZ_TO_FFT_FREQ(200) TODOPING
+//#define AUDIOP__KILLER_WHALE_FREQ_HIGH AUDIOP__HZ_TO_FFT_FREQ(300)
 
 /*
  * Structure for each source
@@ -72,6 +63,12 @@ void audioP_init(void);
  */
 uint16_t audioP_convertFreq(uint16_t freq);
 
+uint16_t audio_analyseSources(Destination *destination_scan);
+
+uint16_t audio_analyseDestination(Destination *destination);
+
+uint16_t audio_analyseKiller(Destination *killer);
+
 /*
  * @brief acquires and analyses a sound clip (FFT_SIZE samples), to find peaks intensity
  * 			sources and their corresponding frequencies and angles
@@ -79,9 +76,10 @@ uint16_t audioP_convertFreq(uint16_t freq);
  * 			do not have to check for errors
  *
  * @param[out] destination_scan	array where found sources will be stored
+ * @param[out] TODOPING
  *
  * @return number of sources found
  */
-uint8_t audioP_findSources(Destination *destination_scan);
+//uint8_t audioP_findSources(Destination *destination_scan, Destination *destination); TODOPING
 
 #endif /* AUDIO_PROCESSING_H */

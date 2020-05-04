@@ -106,15 +106,15 @@ uint16_t comms_readf(char *readText, uint16_t arraySize){
 			readText[i] = '\0';
 			comms_printf(" \n\r");
 			return numOfCharsRead = i-1;	// we do not count \0
-		case 127:	//ASCII special delete character
+		case ASCII_DELETE_CHARACTER:	//ASCII special delete character
 				readText[i-1] = '\0';
 				readText[i] = '\0';
-				i-=1;
+				i-=2;	//-2 because we want to re read i-1 and for will increment i
 				comms_printf("\r                                   \r%s",readText);	//erase line
 			break;
 		default:
 			//We protect against special ASCII characters so we do nothing for them
-			if( ASCII_NORMAL_TEXT_BEGIN <= readChar && readChar <= ASCII_NORMAL_TEXT_BEGIN){
+			if( ASCII_NORMAL_TEXT_BEGIN <= readChar && readChar <= ASCII_NORMAL_TEXT_END){
 				readText[i] = readChar;
 				readText[i+1]= '\0';
 				//we erase line before writing because comms_printf adds space between characters otherwise

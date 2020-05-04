@@ -285,6 +285,8 @@ void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer){
 	 * other running threads must also run for the controller to be useful, so
 	 * all threads should have the same priority as  MotControllerThd*/
 	chThdCreateStatic(waMotControllerThd, sizeof(waMotControllerThd), NORMALPRIO, MotControllerThd, NULL);
+
+	return;
 }
 
 void travelCtrl_goToAngle(int16_t directionAngle){
@@ -299,4 +301,9 @@ void travCtrl_stopMoving(){
 	right_motor_set_speed(0);
 	left_motor_set_speed(0);
 
+}
+
+void travCtrl_moveBackwards(void){
+	right_motor_set_speed(-MOT_MAX_NEEDED_SPS);
+	left_motor_set_speed(-MOT_MAX_NEEDED_SPS);
 }

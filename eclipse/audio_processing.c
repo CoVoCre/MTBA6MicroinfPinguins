@@ -61,13 +61,19 @@
 #define WRITING_MODE_ZERO				4
 #define NB_STAB_CYCLES					8
 
+#define NB_ERROR_DETECTED_MAX			15
+
 #define EQUAL							1
 #define UNEQUAL							0
+
+#define KILLER_FREQ_MIN					958						//Corresponding to 1000Hz
+#define KILLER_FREQ_MAX					972						//Corresponding to 800Hz
+#define KILLER_FREQ						959						//Corresponding to 1000Hz
 
 /* Sometimes we do not find a source, but only because of one time
  * perturbations or noise. Therefore, we try N times before really
  * knowing that 0 sources are present*/
-#define NO_SOURCES_RETRY_N_TIMES	10
+#define NO_SOURCES_RETRY_N_TIMES	15
 
 
 /*Semaphore*/
@@ -122,7 +128,7 @@ uint16_t updateDirection(Destination *destination);
  * Returns freq of source: source[source_index].freq
  * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
  */
-uint16_t getSourceFreq(uint8_t source_index);
+//uint16_t getSourceFreq(uint8_t source_index); TODOPING
 
 /*
 *	Callback called when the demodulation of the four microphones is done.
@@ -142,6 +148,8 @@ void processAudioData(int16_t *data, uint16_t num_samples);
 *	Put the invoking thread into sleep until it can process the audio data
 */
 void audio_waitForFFTBuffer(void);
+
+void audio_analyseSpectre(void);
 
 /*
  * Calculates FFT and its amplitude of the for mic
@@ -211,20 +219,14 @@ void audioP_init(){
 	mic_start(&processAudioData);
 }
 
-uint8_t audioP_findSources(Destination *destination_scan){
+void audio_analyseSpectre(void)
+{
 	static float mic_ampli_right[FFT_SIZE];
 	static float mic_ampli_left[FFT_SIZE];
 	static float mic_ampli_front[FFT_SIZE];
 	static float mic_ampli_back[FFT_SIZE];
 
-	/* @note noSourcesCounter
-	 * When 0 sources are found, we do not return immediately. Instead, we retry
-	 * NO_SOURCES_RETRY_N_TIMES times until really knowing there are no more sources. */
-	uint8_t	noSourcesCounter = 0;
-
-	bool errorInSources = true;
-	while(errorInSources==true){
-		errorInSources=false;	//we set it back to true if we find errors
+	while(1){		//DOTOPING return error if its not working
 		//Waits until enough sound samples are collected
 		audio_waitForFFTBuffer();
 
@@ -237,39 +239,215 @@ uint8_t audioP_findSources(Destination *destination_scan){
 		//Calculate FFT of sound signal, stores back inside mic_data_xxx for frequencies, and mic_ampli_xxx for amplitudes
 		audioCalculateFFT(mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
 
-		//Left microphone is taken for the peak calculation
-		if(audioPeak(mic_ampli_left)==ERROR_AUDIO){
-			errorInSources = true;
-			noSourcesCounter=0;
-			continue;	//we restart at the beginning of the while loop
-		}
-		/* When we have retried NO_SOURCES_RETRY_N_TIMES times because of 0 found sources,
-		* we know it is time to return that there are actually no sources. */
-		else if(noSourcesCounter > NO_SOURCES_RETRY_N_TIMES && nb_sources==0){
-			return nb_sources;
-		}
-		else if(nb_sources==0){	//when 0 sources are found we try again but count it
-			errorInSources = true;
-			noSourcesCounter++;
-			continue;	//we restart at the beginning of the while loop
-		}
+//		for(uint16_t freq_counter=FFT_FREQ_MIN; freq_counter<FFT_FREQ_MAX; freq_counter+=3){		//TODOPING
+//			comms_printf( "audioAnalyseSpectre:  freq = %d	ampli=%f 				freq = %d	ampli=%f					freq = %d	ampli=%f\n\r",
+//						freq_counter, mic_ampli_left[freq_counter], freq_counter+1, mic_ampli_left[freq_counter+1], freq_counter+2, mic_ampli_left[freq_counter+2]);
+//		}
 
-		/* For each source we calculate angles to check them, and we also check frequencies
-		 * to make sure there are no errors later. */
+		if(audioPeak(mic_ampli_left) != ERROR_AUDIO){	//Peak calculation was successful: source array was calculated with success
+//			comms_printf( "audioAnalyseSpectre:  spectre calc without errors!\n\r");		//TODOPING
+//			comms_printf( "audioAnalyseSpectre:  nb_sources = %d\n\r", nb_sources);
+			break;
+		}
+	}
+}
+
+uint16_t audio_analyseSources(Destination *destination_scan)
+{
+
+	bool errorDetected = true;
+
+	while(errorDetected){
+		errorDetected = false;
+
+		audio_analyseSpectre();
+
 		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-			destination_scan[source_counter].angle = determineAngle(source_counter);
-			destination_scan[source_counter].freq = getSourceFreq(source_counter);
-
-			//We check for angle or frequency errors
-			if (destination_scan[source_counter].angle == ERROR_AUDIO || destination_scan[source_counter].freq == ERROR_AUDIO) {
-				errorInSources = true;
-				break;	//we break out of the for loop to restart while loop
+			if(abs(KILLER_FREQ-source[source_counter].freq) < AUDIOP__FREQ_THD){
+				comms_printf( "audioAnalyseSource:	Killer at freq = %d\n\r", audioP_convertFreq(source[source_counter].freq));	//TODOPING
+				if(determineAngle(source_counter) != ERROR_AUDIO){
+					return KILLER_WHALE_DETECTED;
+				}
+				else{
+					errorDetected = true;
+					break;
+				}
 			}
+
+			destination_scan[source_counter].angle = determineAngle(source_counter);
+			if(destination_scan[source_counter].angle != ERROR_AUDIO){
+				destination_scan[source_counter].freq = source[source_counter].freq;
+			}
+			else{
+				errorDetected = true;
+			}
+
 		}
 	}
 
 	return nb_sources;
 }
+
+uint16_t audio_analyseDestination(Destination *destination)
+{
+
+	for(uint8_t error_counter = ZERO; error_counter<NB_ERROR_DETECTED_MAX; error_counter++){
+
+		audio_analyseSpectre();
+
+//		for(uint8_t source_counter=0; source_counter<nb_sources; source_counter++){
+//			comms_printf( "audioAnalyseSource:	source=%d	 freq = %d\n\r", source_counter, audioP_convertFreq(source[source_counter].freq));	//TODOPING
+//		}
+
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++){
+
+			if(abs(KILLER_FREQ-source[source_counter].freq) < AUDIOP__FREQ_THD){
+				//comms_printf( "audioAnalyseSource:	Killer at freq = %d\n\r", audioP_convertFreq(source[source_counter].freq));	//TODOPING
+				if(determineAngle(source_counter) != ERROR_AUDIO){
+					return KILLER_WHALE_DETECTED;
+				}
+			}
+
+			if(abs(destination->freq-source[source_counter].freq) < AUDIOP__FREQ_THD){
+				destination->angle = determineAngle(source_counter);
+				if(destination->angle != ERROR_AUDIO){
+					destination->index = source_counter;									//DOTOPING do we need destination.index???
+					destination->freq = source[source_counter].freq;
+					return SUCCESS_AUDIO;
+				}
+			}
+
+		}
+	}
+
+	return ERROR_AUDIO_SOURCE_NOT_FOUND;
+}
+
+uint16_t audio_analyseKiller(Destination *killer)
+{
+
+	for(uint8_t error_counter = ZERO; error_counter<NB_ERROR_DETECTED_MAX; error_counter++){
+
+		audio_analyseSpectre();
+
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++){
+			//if(KILLER_FREQ_MIN < source[source_counter].freq && source[source_counter].freq < KILLER_FREQ_MAX){		//TODOPING
+			if(abs(KILLER_FREQ-source[source_counter].freq) < AUDIOP__FREQ_THD){
+				//comms_printf("audioAnalyseKiller:		Killer found \n\r"); //DOTOPING
+				killer->angle = determineAngle(source_counter);
+				if(killer->angle != ERROR_AUDIO){
+					//comms_printf("audioAnalyseKiller:		Killer angle calculated \n\r"); //DOTOPING
+					killer->index = source_counter;				//TODOPING do we need index and freq
+					killer->freq = source[source_counter].freq;
+					return SUCCESS_AUDIO;
+				}
+				else{
+					break;
+				}
+			}
+		}
+	}
+
+	return ERROR_AUDIO_SOURCE_NOT_FOUND;
+}
+
+//uint8_t audioP_findSources(Destination *destination_scan, Destination *destination){
+//	static float mic_ampli_right[FFT_SIZE];
+//	static float mic_ampli_left[FFT_SIZE];
+//	static float mic_ampli_front[FFT_SIZE];
+//	static float mic_ampli_back[FFT_SIZE];
+//
+//	/* @note noSourcesCounter
+//	 * When 0 sources are found, we do not return immediately. Instead, we retry
+//	 * NO_SOURCES_RETRY_N_TIMES times until really knowing there are no more sources. */
+//	uint8_t	noSourcesCounter = 0;
+//
+//	bool errorInSources = true;
+//	while(errorInSources==true){
+//		errorInSources=false;	//we set it back to true if we find errors
+//		//Waits until enough sound samples are collected
+//		audio_waitForFFTBuffer();
+//
+//		//Copy buffer to avoid conflicts
+//		arm_copy_f32(mic_buffer_left, mic_data_left, CMPX_VAL * FFT_SIZE);
+//		arm_copy_f32(mic_buffer_right, mic_data_right, CMPX_VAL * FFT_SIZE);
+//		arm_copy_f32(mic_buffer_back, mic_data_back, CMPX_VAL * FFT_SIZE);
+//		arm_copy_f32(mic_buffer_front, mic_data_front, CMPX_VAL * FFT_SIZE);
+//
+//		//Calculate FFT of sound signal, stores back inside mic_data_xxx for frequencies, and mic_ampli_xxx for amplitudes
+//		audioCalculateFFT(mic_ampli_left, mic_ampli_right, mic_ampli_back, mic_ampli_front);
+//
+//		//Left microphone is taken for the peak calculation
+//		if(audioPeak(mic_ampli_left)==ERROR_AUDIO){
+//			errorInSources = true;
+//			noSourcesCounter=0;
+//			continue;	//we restart at the beginning of the while loop
+//		}
+//		/* When we have retried NO_SOURCES_RETRY_N_TIMES times because of 0 found sources,
+//		* we know it is time to return that there are actually no sources. */
+//		else if(noSourcesCounter > NO_SOURCES_RETRY_N_TIMES && nb_sources==0){
+//			comms_printf("Found no sources NO_SOURCES_RETRY_N_TIMES times\n\r"); //DEBUG
+//			return nb_sources;	//=return 0
+//		}
+//		else if(nb_sources==0){	//when 0 sources are found we try again but count it
+//			errorInSources = true;
+//			noSourcesCounter++;
+//			continue;	//we restart at the beginning of the while loop
+//		}
+//
+//		/* For each source we calculate angles to check them, and we also check frequencies
+//		 * to make sure there are no errors later. */
+//		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+//			//destination_scan[source_counter].angle = determineAngle(source_counter);
+//			destination_scan[source_counter].freq = getSourceFreq(source_counter);
+//
+//
+//			//We check frequency errors
+//			if (destination_scan[source_counter].freq == ERROR_AUDIO) {
+//				noSourcesCounter=0;
+//				errorInSources = true;
+//				comms_printf("Error in one of the frequencies \n\r"); //DEBUG
+//				break;	//we break out of the for loop to restart while loop
+//			}
+//			else if(destination!=NULL){
+//				if(abs(destination->freq-destination_scan[source_counter].freq) < AUDIOP__FREQ_THD){
+//					destination_scan[source_counter].angle = determineAngle(source_counter);
+//					if(destination_scan[source_counter].angle==ERROR_AUDIO){
+//						noSourcesCounter=0;
+//						errorInSources = true;
+//						comms_printf("Error angle of destination one of the source angle or freq\n\r"); //DEBUG
+//						break;	//we break out of the for loop to restart while loop
+//					}
+//					else{
+//						destination->angle = destination_scan[source_counter].angle;
+//						destination->index = source_counter;
+//						destination->freq = getSourceFreq(source_counter);
+//					}
+//				}
+//				if(AUDIOP__KILLER_WHALE_FREQ_LOW < destination_scan[source_counter].freq && destination_scan[source_counter].freq < AUDIOP__KILLER_WHALE_FREQ_HIGH ){
+//					destination_scan[source_counter].angle = determineAngle(source_counter);
+//					if(destination_scan[source_counter].angle==ERROR_AUDIO){
+//						noSourcesCounter=0;
+//						errorInSources = true;
+//						comms_printf("Error angle of killer whale\n\r"); //DEBUG
+//						break;	//we break out of the for loop to restart while loop
+//					}
+//				}
+//			}
+//			else{
+//				destination_scan[source_counter].angle = determineAngle(source_counter);
+//				if(destination_scan[source_counter].angle==ERROR_AUDIO){
+//					noSourcesCounter=0;
+//					errorInSources = true;
+//					comms_printf("Error angle while scanning all sources\n\r"); //DEBUG
+//					break;	//we break out of the for loop to restart while loop
+//				}
+//			}
+//		}	//end of for loop scanning all sources frequencies
+//	}
+//
+//	return nb_sources;
+//}
 
 /*
  * Convert the FFT value into a real frequency [Hz]
@@ -366,16 +544,16 @@ int16_t determineAngle(uint8_t source_index)
  * Returns freq of source: source[source_index].freq
  * Rturns ERROR_AUDIO if source[source_index].freq=ERROR_AUDIO or source[source_index].freq=ZERO
  */
-uint16_t getSourceFreq(uint8_t source_index)
-{
-#ifdef DEBUG_AUDIO
-	if((source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)){
-		chprintf((BaseSequentialStream *)&SD3, "audioGetSourceFreq: source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)	\n\r\n\r");
-		return ERROR_AUDIO;
-	}
-#endif
-	return source[source_index].freq;
-}
+//uint16_t getSourceFreq(uint8_t source_index)TODOPING
+//{
+//#ifdef DEBUG_AUDIO
+//	if((source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)){
+//		chprintf((BaseSequentialStream *)&SD3, "audioGetSourceFreq: source[source_index].freq==ERROR_AUDIO) || (source[source_index].freq==ZERO)	\n\r\n\r");
+//		return ERROR_AUDIO;
+//	}
+//#endif
+//	return source[source_index].freq;
+//}
 
 /*
 
@@ -473,6 +651,7 @@ uint16_t audioPeak(float *mic_ampli)
    		return ERROR_AUDIO;
    	}
 
+
    	nb_sources=nb_sources_init;
 	for(source_counter=ZERO; source_counter<AUDIOP__NB_SOURCES_MAX; source_counter++){ 			//update file scoped source array with new sources in source_init and clear rest of array
 		if(source_counter<nb_sources_init){
@@ -533,6 +712,7 @@ int16_t audioPeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic_
 
 		*nb_sources_init=ZERO;
 		for(uint16_t freq_counter=FFT_FREQ_MIN; freq_counter<FFT_FREQ_MAX; freq_counter++){
+			//comms_printf( "audioPeakScan:  freq = %d		ampli=%f \n\r", freq_counter, mic_ampli[freq_counter]); //TODOPING
 			peak_mode=PEAK_MODE_DO_NOTHING;
 			if(mic_ampli[freq_counter]>AMPLI_THD){
 				source_exchange=ZERO;

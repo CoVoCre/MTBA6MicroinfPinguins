@@ -39,9 +39,6 @@
  * code for when the user asks us to go to an unexisting source*/
 #define NOT_A_VALID_SOURCE		100
 
-#define KILLER_WHALE_FREQ_LOW AUDIOP__HZ_TO_FFT_FREQ(200)
-#define KILLER_WHALE_FREQ_HIGH AUDIOP__HZ_TO_FFT_FREQ(300)
-
 /*===========================================================================*/
 /* Static, file wide defined variables                                       */
 /*===========================================================================*/
@@ -57,13 +54,18 @@ static bool robotMoving = false;
 /* Internal functions definitions of main. Descriptions are above each 		*/
 /* function code so as to have only one source of truth            			*/
 /*===========================================================================*/
-uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan);
+
+//uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan, Destination *destination);
 
 void communicationUser(Destination *destination);
 
-void moveTowardsTarget(Destination *destination);
+uint16_t moveTowardsTarget(Destination *destination);
 
-void printSources(uint8_t numberOfSourcesDetected, Destination *destination_scan);
+void escapeKiller(void);
+
+void printSources(uint16_t nb_sources, Destination *destination_scan);
+
+void destinationReached(void);
 
 /*===========================================================================*/
 /* Public functions code & callbacks for outside main                       */
@@ -80,6 +82,37 @@ void destReachedCB(void)
 }
 
 /*===========================================================================*/
+/* Threads of the main                   								    */
+/*===========================================================================*/
+/* @brief thread created in fct. scapeKiller when escaping from killer whale
+ * @note blinks LEDs as warning
+ */
+static THD_WORKING_AREA(waThdLed, 128);
+static THD_FUNCTION(ThdLed, arg) {
+
+    chRegSetThreadName(__FUNCTION__);
+    (void)arg;
+
+    //chThdSleepMilliseconds(400);			//Waits in case the thread is directly again stopped TODOPING
+
+    while(!chThdShouldTerminateX()){
+		palTogglePad(GPIOD, GPIOD_LED1);
+		chThdSleepMilliseconds(150);
+		palTogglePad(GPIOD, GPIOD_LED3);
+		chThdSleepMilliseconds(150);
+		palTogglePad(GPIOD, GPIOD_LED5);
+		chThdSleepMilliseconds(150);
+		palTogglePad(GPIOD, GPIOD_LED7);
+        chThdSleepMilliseconds(150);
+    }
+	palSetPad(GPIOD, GPIOD_LED1);
+	palSetPad(GPIOD, GPIOD_LED3);
+	palSetPad(GPIOD, GPIOD_LED5);
+	palSetPad(GPIOD, GPIOD_LED7);
+}
+
+
+/*===========================================================================*/
 /* -----------------------  MAIN FUNCTION OF PROJECT -----------------------*/
 /*===========================================================================*/
 
@@ -91,9 +124,9 @@ void destReachedCB(void)
 int main(void) {
 
 	Destination destination;
-	destination.index = AUDIOP__UNINITIALIZED_INDEX;
-	destination.freq = AUDIOP__UNINITIALIZED_FREQ;
-	destination.angle = 0;
+	destination.index = 	AUDIOP__UNINITIALIZED_INDEX;
+	destination.freq = 	AUDIOP__UNINITIALIZED_FREQ;
+	destination.angle = 	0;
 
 	//Initialise chibios systems, hardware abstraction layer and memory protection
 	halInit();
@@ -103,11 +136,10 @@ int main(void) {
 	//Start the serial communication over bluetooth
 	comms_start();
 
-	comms_printf("Welcome to the penguin simulator!\n\r\n\r");
-	comms_printf("Our robot will try to beat penguins at their game,\n\r");
-	comms_printf("that is identifying sounds of their chicks and going\n\r");
-	comms_printf( "to one of them amongst many.\n\r");
-	comms_printf( "You will decide which onoe the penguins goes to...\n\r\n\r");
+	comms_printf("Welcome to the penguin-mother simulation!\n\r\n\r");
+	comms_printf("Our robot-penguin-mother tries to feed their children,\n\r");
+	comms_printf("but she needs our help to choose the child she should go to.\n\r");
+	comms_printf( "The children can be distinguished by their crying at different frequencies.\n\r\n\r");
 	comms_printf( "But be aware of killer whales... !\n\r");
 
 	comms_printf( "\n\r\n\rThe simulation will now begin.\n\r\n\r");
@@ -123,9 +155,10 @@ int main(void) {
 
 		communicationUser(&destination); //Scan sources and ask the user to select one... except if there is a killer whale !
 
-		moveTowardsTarget(&destination); //Move towards the selected source, until it is reached or not found anymore
+		if(moveTowardsTarget(&destination) != ERROR_AUDIO_SOURCE_NOT_FOUND){ //Move towards the selected source, until it is reached or not found anymore
+			destinationReached();
+		}
 
-		chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
 	} //End of infinite main thread while loop
 }
 
@@ -146,20 +179,25 @@ void communicationUser(Destination *destination) {
 	char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
 	uint8_t readNumber = NOT_A_VALID_SOURCE;	//To store the converted number if it's no error
 	char *endTextReadPointer; //pointer to store where strtol finishes reading text
-	Destination destination_scan[AUDIOP__NB_SOURCES_MAX] = {0};	//we store all found sources properties here
-	bool keepAsking = true;	//this is the while control variable, to ask and re ask until a source is selected
+
+	Destination destination_scan[AUDIOP__NB_SOURCES_MAX] = {0};		//we store all found sources properties here
+	bool keepAsking 										= true;											//this is the while control variable, to ask and re ask until a source is selected
+	uint16_t nb_sources 									= 0;
 
 	/* Scans sources until there are no errors and no killer whales 🐋,
 	 * and returns how many were found at that point */
-	uint8_t numberOfSourcesDetected = getSourcesAndCheckKillerWhales(destination_scan);
+						//TODOPING put it in a function because reused afterwards!
+	nb_sources = audio_analyseSources(destination_scan);
+	if(nb_sources==KILLER_WHALE_DETECTED){
+		escapeKiller();
+	}
 
-	printSources(numberOfSourcesDetected, destination_scan);
+	printSources(nb_sources, destination_scan);
 
 	//we ask the user for a number or r (rescan), and keep asking until the the input is valid
 	while(keepAsking == true){
 
-		comms_printf( "Please enter the number of the source you want our little\n\r");
-		comms_printf( "penguin to go to, or enter r to rescan sources.\n\r");
+		comms_printf( "\n\rPlease enter the number of the penguin you want to go to or enter 'r' to rescan penguins.\n\r");
 		comms_readf( readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
 
 		//If r isn't entered, we try to interpret the number entered
@@ -174,7 +212,7 @@ void communicationUser(Destination *destination) {
 				comms_printf( "It seems what you just typed is not a number. Please try again !\n\r");
 			}
 			//We check if the value entered is actually a source, between 0 (excluded) and nb_sources (excluded)
-			else if(readNumber < numberOfSourcesDetected){
+			else if(readNumber < nb_sources){
 				keepAsking = false;	//Here we will actually have a good source
 			}
 			else{	//the number wasn't a valid source or there were 0 sources available and user didn't press r
@@ -182,82 +220,19 @@ void communicationUser(Destination *destination) {
 			}
 		}
 		else{ //otherwise (user typed r) we rescan
-			numberOfSourcesDetected = getSourcesAndCheckKillerWhales(destination_scan);
-			printSources(numberOfSourcesDetected, destination_scan);
+			nb_sources = audio_analyseSources(destination_scan);
+			if(nb_sources==KILLER_WHALE_DETECTED){
+				escapeKiller();
+			}
+
+			printSources(nb_sources, destination_scan);
 		}
 	}
 
+	comms_printf( "The robot will now go to penguin %u ...\n\r", readNumber);
 	destination->index = readNumber;
 	destination->freq = destination_scan[destination->index].freq;
-}
-
-/*
- * @brief get all monofrequency sound sources and retries until there are no killer whales 🐋
- * @note if there is a killer whale, it will make the robot penguin run away from it
- *
- * @param[out] destination_scan	frequencies and angles of sources detected will be stored here
- *
- * @return number our sources which were found, 0 if no sources are present
- */
-uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan)
-{
-	uint16_t nb_sources = 0;
-	bool keepScanning = true;
-	comms_printf( "Scanning for sources ...\n\r");
-
-	//We scan until there are no killer whales
-	while(keepScanning==true){
-		keepScanning = false; //We will set keepScanning to true if we see a killer whale
-
-		//We get the number of sources and have audio_processing store all found sources in destination_scan
-		nb_sources = audioP_findSources(destination_scan);
-
-		if(nb_sources==0){
-			break;
-		}
-
-		//we scan each source and check if it's frequency is within killer whale 🐋 range
-		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-
-			if(KILLER_WHALE_FREQ_LOW < destination_scan[source_counter].freq && destination_scan[source_counter].freq < KILLER_WHALE_FREQ_HIGH ){
-
-				keepScanning=true;
-				comms_printf( "Oh nooooooo... There is a killer whale 🐋 and I'm leaaaaaviiiiing !!!!\n\r");
-
-				//We invert the angle (+/- 180°) of the killer whale direction and set the robot to it
-				if(destination_scan[source_counter].angle >=0){
-					travelCtrl_goToAngle(destination_scan[source_counter].angle-180);
-				}
-				else{
-					travelCtrl_goToAngle(destination_scan[source_counter].angle+180);
-				}
-			}
-		}
-	}
-
-	return nb_sources;
-}
-
-/*
- * @brief prints the sources and their properties to the bluetoot serial
- *
- * @param[in] numberOfSourcesDetected	how many sources are in destination_scan array
- * @param[in] destination_scan			array with properties of detected sources
- */
-void printSources(uint8_t numberOfSourcesDetected, Destination *destination_scan){
-	/* Printing the available sources and their frequencies.
-	 * When we get here we are sure there are no more errors and killer whales, so we do not check anymore */
-	comms_printf( "The following sources are available: \n\r");
-	if(numberOfSourcesDetected==0){
-		comms_printf("    ...No sources we found...\n\r");
-
-	}
-	else{
-		for (uint8_t source_counter = 0; source_counter < numberOfSourcesDetected; source_counter++) {
-			comms_printf("Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
-					audioP_convertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
-		}
-	}
+	destination->angle = destination_scan[destination->index].angle;
 }
 
 /*
@@ -271,11 +246,9 @@ void printSources(uint8_t numberOfSourcesDetected, Destination *destination_scan
  * 								Not intended to be used as output, but still this function
  * 								modifies this variable.
  */
-void moveTowardsTarget(Destination *destination)
+uint16_t moveTowardsTarget(Destination *destination)
 {
-	uint16_t nb_sources				= 0;
-	Destination destination_scan[AUDIOP__NB_SOURCES_MAX]		= {0};	// here we will store all found sources properties
-	bool isDestinationStillHere = false;
+	uint16_t analyseDestination		= 0;
 
 	/*Now we set robotMoving file variable to true, it will either be set to false here if
 	 * we cannot find the destination source anymore, or by the destReachedCB function
@@ -286,33 +259,147 @@ void moveTowardsTarget(Destination *destination)
 
 		/*scanSources returns only when there are no killer whales
 		 * (if killer whale is present, it will run away from it). */
-		nb_sources = getSourcesAndCheckKillerWhales(destination_scan);
+		analyseDestination = audio_analyseDestination(destination);
 
 		//Now we check if the selected source is still available
-		for(uint8_t source_counter = 0; source_counter<nb_sources; source_counter++){
-			if( abs(destination->freq-destination_scan[source_counter].freq) < AUDIOP__FREQ_THD){
-				isDestinationStillHere = true;
-				destination->index=source_counter;
-				destination->angle = destination_scan[destination->index].angle;
-			}
-		}
-
-		/* When the destination selected isn't anymore available,
-		 * we stop moving towards the source and thus exit the while loop.
-		 * If 0 sources are found it also means the source is not available */
-		if(isDestinationStillHere==false || nb_sources==0){
-			comms_printf( "The source you selected is not available anymore, please select a new one.\n\r");
+		if(analyseDestination==ERROR_AUDIO_SOURCE_NOT_FOUND){
+			comms_printf( "\n\rThe source is not anymore available, please select a new one.\n\r");
 			robotMoving = false;
 			travCtrl_stopMoving();
-			break;	//exit robot moving while loop
+			return ERROR_AUDIO_SOURCE_NOT_FOUND;
 		}
-
-		if(robotMoving == true){	//we check robotMoving == true in case the source is not found or
-								//destination was reached while we were withing robotMoving loop
+		else if(analyseDestination==KILLER_WHALE_DETECTED){
+			escapeKiller();
+			robotMoving = true;
+		}
+		else{
 			travelCtrl_goToAngle(destination->angle);
 		}
 	} //end of while robotMoving
+
+	return SUCCESS_AUDIO;
 }
+
+void escapeKiller(void)
+{
+	Destination killer;
+	killer.index = 	AUDIOP__UNINITIALIZED_INDEX;
+	killer.freq =	AUDIOP__UNINITIALIZED_FREQ;
+	killer.angle = 	0;
+
+	bool killerIsComing	= true;
+
+	thread_t *blink = chThdCreateStatic(waThdLed, sizeof(waThdLed), NORMALPRIO, ThdLed, NULL);
+
+	while(killerIsComing){
+		if(audio_analyseKiller(&killer) == ERROR_AUDIO_SOURCE_NOT_FOUND){
+			killerIsComing = false;
+		}
+		else{
+			if(killer.angle >= 0){
+				travelCtrl_goToAngle(killer.angle-180);
+			}
+			else{
+				travelCtrl_goToAngle(killer.angle+180);
+			}
+		}
+	}
+
+	chThdTerminate(blink);
+	comms_printf( "We escaped from the killer whale!\n\r");
+}
+
+void printSources(uint16_t nb_sources, Destination *destination_scan){
+	/* Printing the available sources and their frequencies.
+	 * When we get here we are sure there are no more errors and killer whales, so we do not check anymore */
+	comms_printf( "The following sources are available: \n\r");
+	if(nb_sources==0){
+		comms_printf("    ...No sources we found...\n\r");
+
+	}
+	else{
+		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+			comms_printf("Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
+					audioP_convertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
+		}
+	}
+}
+
+void destinationReached(void)
+{
+	comms_printf("\n\r\n\r Final destination reached! \n\r\n\r\n\r");
+	palSetPad(GPIOB, GPIOB_LED_BODY);;
+	chThdSleepMilliseconds(1000); //wait 1 second before restarting for final messages to finish sending to computer
+	travCtrl_moveBackwards();
+	chThdSleepMilliseconds(3000);
+	travCtrl_stopMoving();
+	palClearPad(GPIOB, GPIOB_LED_BODY);
+}
+
+/*
+ * @brief get all monofrequency sound sources and retries until there are no killer whales 🐋
+ * @note if there is a killer whale, it will make the robot penguin run away from it
+ *
+ * @param[out] destination_scan	frequencies and angles of sources detected will be stored here
+ *
+ * @return number our sources which were found, 0 if no sources are present
+ */
+//uint8_t getSourcesAndCheckKillerWhales(Destination *destination_scan, Destination *destination)
+//{
+//	uint16_t nb_sources = 0;
+//	bool keepScanning = true;
+//	bool wasThereAKillerWhale = false;
+//
+//	//We scan until there are no killer whales
+//	while(keepScanning==true){
+//		keepScanning = false; //We will set keepScanning to true if we see a killer whale
+//
+//		//We get the number of sources and have audio_processing store all found sources in destination_scan
+//		nb_sources = audioP_findSources(destination_scan, destination);
+//
+//		if(nb_sources==0){
+//			//if we detected a killer whale at least once, it means we set the robot moving so we have to stop here
+//			if(wasThereAKillerWhale==true){
+//				travCtrl_stopMoving();
+//			}
+//			return nb_sources;
+//		}
+//
+//		//we scan each source and check if it's frequency is within killer whale 🐋 range
+//		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+//
+//			if(AUDIOP__KILLER_WHALE_FREQ_LOW < destination_scan[source_counter].freq && destination_scan[source_counter].freq < AUDIOP__KILLER_WHALE_FREQ_HIGH ){
+//
+//				keepScanning=true;
+//				comms_printf( "Oh nooooooo... There is a killer whale 🐋 and I'm leaaaaaviiiiing !!!!\n\r");
+//				wasThereAKillerWhale = true;
+//
+//				//We invert the angle (+/- 180°) of the killer whale direction and set the robot to it
+//				if(destination_scan[source_counter].angle >=0){
+//					travelCtrl_goToAngle(destination_scan[source_counter].angle-180);
+//				}
+//				else{
+//					travelCtrl_goToAngle(destination_scan[source_counter].angle+180);
+//				}
+//			}
+//		}
+//	}
+//
+//	//if we detected a killer whale at least once, it means we set the robot moving so we have to stop here
+//	if(wasThereAKillerWhale==true){
+//		travCtrl_stopMoving();
+//	}
+//	return nb_sources;
+//}
+
+/*
+ * @brief prints the sources and their properties to the bluetoot serial
+ *
+ * @param[in] nb_sources	how many sources are in destination_scan array
+ * @param[in] destination_scan			array with properties of detected sources
+ */
+
+
 
 /*===========================================================================*/
 /* Code to protect against smashing */

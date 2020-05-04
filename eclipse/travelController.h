@@ -29,6 +29,7 @@ typedef void (*travCtrl_obstacleReached)(void);
  * @parameter[in] obstacleReachedCallBackPointer callback for when an obstacle
  * 						is reached and the robot stops.
 */
+//void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 
 /*
@@ -44,5 +45,9 @@ void travelCtrl_goToAngle(int16_t directionAngle);
 */
 void travCtrl_stopMoving(void);
 
+/*
+ * @brief   moves backwards after a source was reached
+*/
+void travCtrl_moveBackwards(void);
 
 #endif /* TRAVELCONTROLLER_H_ */
