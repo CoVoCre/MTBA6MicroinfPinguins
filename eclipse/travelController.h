@@ -29,7 +29,6 @@ typedef void (*travCtrl_obstacleReached)(void);
  * @parameter[in] obstacleReachedCallBackPointer callback for when an obstacle
  * 						is reached and the robot stops.
 */
-//void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 void travCtrl_init(travCtrl_obstacleReached obstacleReachedCallBackPointer);
 
 /*

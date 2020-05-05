@@ -33,11 +33,11 @@
  * MOTOR_SPEED_LIMIT (=1100) - MOT_MAX_NEEDED_SPS - MOT_MIN_SPEED_SPS */
 #define MOT_MAX_DIFF_SPS_FOR_CORRECTION 222
 /* @note MOT_MIN_SPEED_SPS
- * we saw that under under 100steps/s the motors were vibrating, so this is the minimum speed in steps/s we will set */
-#define MOT_MIN_SPEED_SPS 100
+ * we saw that under under MOT_MIN_SPEED_SPS steps/s the motors were vibrating, so this is the minimum speed in steps/s we will set */
+#define MOT_MIN_SPEED_SPS 150
 
 #define MAX_DISTANCE_VALUE_MM 500 //how far, in mm, from an obstacle should the robot start to slow down
-#define STOP_DISTANCE_VALUE_MM 30 //how far, in mm, from an obstacle should the robot stop moving
+#define STOP_DISTANCE_VALUE_MM 50 //how far, in mm, from an obstacle should the robot stop moving
 
 #define MOT_MAX_ANGLE_TO_CORRECT 40	// angle in ° over which the motor will not move forward, only turn, and at a constant rotating speed
 
