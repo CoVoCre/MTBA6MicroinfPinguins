@@ -1,7 +1,7 @@
 /*
  * main.c
  *
- *  Created on: Apr 1, 2020
+ *  Created on: May 7, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -27,7 +27,7 @@
 #include <comms.h>
 
 /*===========================================================================*/
-/* Definitions                                    						   */
+/* Constants definition for this file						               */
 /*===========================================================================*/
 
 //Constants for text reading
@@ -36,6 +36,13 @@
 
 //Number constants
 #define DEG180						180
+
+//Time constants
+#define MSEC_50						50
+#define MSEC_150						150
+#define SEC_2						2000
+#define SEC_3						3000
+
 
 /*===========================================================================*/
 /* Static, file wide defined variables                                       */
@@ -54,6 +61,7 @@ static bool robotMoving		= false;
  * but the thread ThdLed uses it as well
  */
 static bool killerIsComing	= false;
+
 
 /*===========================================================================*/
 /* Internal functions definitions of main. 							 		*/
@@ -142,14 +150,15 @@ static THD_FUNCTION(ThdLed, arg)
     (void)arg;
 
     while(true){
+		chThdSleepMilliseconds(MSEC_50);				//Wait a short time in case it was a wrong alarm
     		while(killerIsComing){
-    			chThdSleepMilliseconds(150);
+    			chThdSleepMilliseconds(MSEC_150);
     			palTogglePad(GPIOD, GPIOD_LED1);
-			chThdSleepMilliseconds(150);
+			chThdSleepMilliseconds(MSEC_150);
 			palTogglePad(GPIOD, GPIOD_LED3);
-			chThdSleepMilliseconds(150);
+			chThdSleepMilliseconds(MSEC_150);
 			palTogglePad(GPIOD, GPIOD_LED5);
-			chThdSleepMilliseconds(150);
+			chThdSleepMilliseconds(MSEC_150);
 			palTogglePad(GPIOD, GPIOD_LED7);
     		}
     		palSetPad(GPIOD, GPIOD_LED1);
@@ -212,12 +221,22 @@ int main(void)
 
 void startPrintf(void)
 {
-	comms_printf("Welcome to the penguin-mother simulation!\n\r\n\r");
-	comms_printf("Our robot-penguin-mother tries to feed their children,\n\r");
+	char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
+	bool keepAsking 										= true;		//this is the while control variable
+
+	while(keepAsking == true){										//press 's' to start the program
+		comms_readf( readNumberText, DIR_SOURCE_MAX_TEXT_LENGTH);
+		if(readNumberText[0]=='s'){
+			keepAsking = false;
+		}
+	}
+
+	comms_printf("\n\rWelcome to the penguin-mother simulation!\n\r\n\r");
+	comms_printf("Our penguin-mother tries to feed their children,\n\r");
 	comms_printf("but she needs our help to choose the child she should go to.\n\r");
-	comms_printf( "The children can be distinguished by their crying at different frequencies.\n\r\n\r");
-	comms_printf( "But be aware of killer whales... !\n\r");
-	comms_printf( "\n\r\n\rThe simulation will now begin.\n\r\n\r");
+	comms_printf( "The children can be distinguished by their crying at different frequencies.\n\r");
+	comms_printf( "But be aware of killer whales... !\n\r\n\r");
+	comms_printf( "The simulation will now start:\n\r\n\r\n\r");
 }
 
 void communicationUser(Destination *destination)
@@ -330,29 +349,30 @@ void escapeKiller(void)
 			killerIsComing = false;
 		}
 		else{
+
 			if(killer.angle >= 0){								//Go in opposite direction than the sound is coming from
 				travelCtrl_goToAngle(killer.angle-DEG180);
 			}
 			else{
 				travelCtrl_goToAngle(killer.angle+DEG180);
 			}
+
 		}
 	}
 
-	comms_printf( "We escaped from the killer whale!\n\r");
 }
 
 void printSources(uint16_t nb_sources, Destination *destination_scan)
 {
 	//We are sure there are no more errors or killer whales inside destination_scan and, so we do not check for errors anymore
-	comms_printf( "The following sources are available: \n\r");
+	comms_printf( "The following penguins are available: \n\r");
 	if(nb_sources==0){
-		comms_printf("    ...No sources we found...\n\r");
+		comms_printf("    ...No penguins were found...\n\r");
 
 	}
 	else{
 		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
-			comms_printf("Source %d :	 frequency =%u		angle =%d \n\r", source_counter,
+			comms_printf("Penguin %d :	 frequency =%u		angle =%d \n\r", source_counter,
 					audioP_convertFreq(destination_scan[source_counter].freq), destination_scan[source_counter].angle);
 		}
 	}
@@ -362,13 +382,14 @@ void destinationReached(void)
 {
 	comms_printf("\n\r\n\r Final destination reached! \n\r\n\r\n\r");
 	palSetPad(GPIOB, GPIOB_LED_BODY);
-	chThdSleepMilliseconds(1500);
+	chThdSleepMilliseconds(SEC_2);
 
-	travCtrl_moveBackwards();			//moves backwards in case robot wants to go to another source
-	chThdSleepMilliseconds(3000);
+	travCtrl_moveBackwards();				//moves backwards in case robot wants to go to another source
+	chThdSleepMilliseconds(SEC_3);
 
 	travCtrl_stopMoving();
 	palClearPad(GPIOB, GPIOB_LED_BODY);
+	chThdSleepMilliseconds(MSEC_50);				//Wait a short time to not scan the motor noise when restarting
 }
 
 
@@ -376,6 +397,7 @@ void destinationReached(void)
 /*===========================================================================*/
 /* Code to protect against smashing */
 /*===========================================================================*/
+
 #define STACK_CHK_GUARD 0xe2dee396
 uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
 

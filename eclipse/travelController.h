@@ -1,7 +1,7 @@
 /*
  * travelController.h
  *
- *  Created on: April 1, 2020
+ *  Created on: May 7, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -15,12 +15,11 @@
 /*
  * @brief type for callback function when obstacle is reached
  * @note is used to declare a pointer to a function that will be called when an obstacle has been reached.
- * 			Use this as and example for how to define the function you provide on initialisation
  */
 typedef void (*travCtrl_obstacleReached)(void);
 
 /*===========================================================================*/
-/* Public functions definitions and descriptions							*/
+/* Public functions															*/
 /*===========================================================================*/
 
 /*

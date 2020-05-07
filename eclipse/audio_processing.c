@@ -1,7 +1,7 @@
 /*
  * audio_processing.c
  *
- *  Created on: Apr 5, 2020
+ *  Created on: May 7, 2020
  *      Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -20,9 +20,10 @@
 #include <fft.h>
 #include <arm_math.h>
 
-/*
- * Definitions
- */
+/*===========================================================================*/
+/* Constants definition for this file						               */
+/*===========================================================================*/
+
 //Program parameters
 #define FFT_FREQ_MAX						1011						//Corresponding to 200Hz, upper limit of scanned freq.
 #define FFT_FREQ_MIN						945						//Corresponding to 1200Hz, lower limit of scanned freq
@@ -47,6 +48,9 @@
 #define SPEED_SOUND						343						//[m/s]
 #define EPUCK_MIC_DISTANCE				0.06						//Distance between two mic in [m]
 
+#define CONVERT_FREQ_CONST				15611					//Conversion of the freq from the FFT-domain to a real freq:
+#define CONVERT_FREQ_PARAM				15.244					//freq[real]=15611-freq[FFT-domain]*15.244
+
 //Number constants
 #define ZERO								0
 #define ONE								1
@@ -67,6 +71,11 @@
 #define WRITING_MODE_ZERO				4
 
 
+
+/*===========================================================================*/
+/* Structures						 			                            */
+/*===========================================================================*/
+
 /*
  * Structure for sources
  * @note: Freq is not in Hz!
@@ -76,15 +85,16 @@ typedef struct Sources {
 	float ampli;
 } Source;
 
-/*
- * Semaphore
- */
+/*===========================================================================*/
+/* Semaphore							 			                            */
+/*===========================================================================*/
+
 static BSEMAPHORE_DECL(audioBufferIsReady, ONE);
 
 
-/*
- * Static Variables
- */
+/*===========================================================================*/
+/* Static variables definitions 		 			                            */
+/*===========================================================================*/
 
 //Audio buffer: 2*FFT_SIZE because arrays contain complex numbers (real + imaginary)
 static float mic_buffer_left[CMPX_VAL*FFT_SIZE];
@@ -281,7 +291,7 @@ uint16_t audioP_analyseSources(Destination *destination_scan)
 
 		audio_analyseSpectre();
 
-		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++) {
+		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++) {
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
 				if(audio_determineAngle(source_counter) != AUDIOP__ERROR){
@@ -312,7 +322,7 @@ uint16_t audioP_analyseDestination(Destination *destination)
 
 		audio_analyseSpectre();
 
-		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++){
+		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++){
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
 				if(audio_determineAngle(source_counter) != AUDIOP__ERROR){
@@ -340,7 +350,7 @@ uint16_t audioP_analyseKiller(Destination *killer)
 
 		audio_analyseSpectre();
 
-		for (uint8_t source_counter = 0; source_counter < nb_sources; source_counter++){
+		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++){
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
 				killer->angle = audio_determineAngle(source_counter);
@@ -363,7 +373,7 @@ uint16_t audioP_analyseKiller(Destination *killer)
  */
 uint16_t audioP_convertFreq(uint16_t freq)
 {
-	freq = (int) (15611 - 15.244*freq);
+	freq = (int) (CONVERT_FREQ_CONST - CONVERT_FREQ_PARAM*freq);
 	return freq;
 }
 
@@ -404,7 +414,7 @@ void audio_analyseSpectre(void)
 {
 	static float mic_ampli_left[FFT_SIZE];
 
-	while(true){		//DOTOPING return error if its not working
+	while(true){
 
 		//Waits until enough sound samples are collected
 		chBSemWait(&audioBufferIsReady);
@@ -439,7 +449,7 @@ uint16_t audio_Peak(float *mic_ampli)
 	uint8_t nb_sources_init						= ZERO;
    	Source source_init[AUDIOP__NB_SOURCES_MAX]	= {0};
 
-   	//Find sources sorted by their peak amplitudes and set their frequency into source_init array. Use by convention mic_ampli_left but could be any of the four mics.
+   	//Find sources and sort them by their peak amplitudes
    	if(audio_PeakScan(source_init, &nb_sources_init, mic_ampli)==AUDIOP__ERROR){
 		return AUDIOP__ERROR;
 	}
@@ -452,18 +462,18 @@ uint16_t audio_Peak(float *mic_ampli)
 		return AUDIOP__ERROR;
 	}
 
-   	/*Bubblesort: sort source_init array accoording to frequencies : smallet frequency will be in source_init[0]->freq, ..., max frequency will be in source_init[nb_sources_init]*/
+   	//Bubblesort: sort source_init array according to frequencies, smallest frequency: source_init[0]->freq, max frequency: source_init[nb_sources_init]
    	if(audio_PeakBubblesort(source_init, nb_sources_init, mic_ampli)==AUDIOP__ERROR){
    		return AUDIOP__ERROR;
    	}
 
-
+   	//update file scoped source array with new sources in source_init and clear rest of array
    	nb_sources=nb_sources_init;
-	for(source_counter=ZERO; source_counter<AUDIOP__NB_SOURCES_MAX; source_counter++){ 			//update file scoped source array with new sources in source_init and clear rest of array
+	for(source_counter=ZERO; source_counter<AUDIOP__NB_SOURCES_MAX; source_counter++){
 		if(source_counter<nb_sources_init){
 			audio_PeakWriteSource(source_counter, WRITING_MODE_SOURCE,  source_init);
 		}
-		else{ 																			//here we clear the rest of the file scope source  array
+		else{
 			audio_PeakWriteSource(source_counter, WRITING_MODE_ZERO,  source_init);
 		}
 	}
@@ -577,7 +587,7 @@ int16_t audio_PeakChange(int8_t source_exchange, uint16_t freq_counter, float mi
 			}
 		case PEAK_MODE_SMALLER:
 			//we need to insert new source at bottom of array, shifting all up, if it is not already full.
-			if(*nb_sources_init<AUDIOP__NB_SOURCES_MAX){ //shift all up and insert lowest one at bottom (only if not already full)
+			if(*nb_sources_init<AUDIOP__NB_SOURCES_MAX){
 				for(uint8_t source_counter=*nb_sources_init; source_counter>source_exchange; source_counter--){
 					if(audio_PeakWriteInit(source_counter, WRITING_MODE_HIGHER, freq_counter, mic_ampli, source_init)==AUDIOP__ERROR){
 						return AUDIOP__ERROR;
@@ -591,7 +601,7 @@ int16_t audio_PeakChange(int8_t source_exchange, uint16_t freq_counter, float mi
 			break;
 
 		case PEAK_MODE_REPLACE:
-			//we shift all sources up from source exchange, but not add new source...
+			//we shift all sources up from source exchange
 			while((source_exchange<(*nb_sources_init-ONE)) && (mic_ampli>(&source_init[source_exchange+ONE])->ampli)){
 				if(audio_PeakWriteInit(source_exchange, WRITING_MODE_LOWER, freq_counter, mic_ampli, source_init)==AUDIOP__ERROR){
 					return AUDIOP__ERROR;
@@ -816,7 +826,7 @@ uint16_t audio_ConvertPhase(int16_t arg, uint16_t freq)
 {
 	arg = (int16_t) ((SPEED_SOUND*DEG90*arg)/(freq*EPUCK_MIC_DISTANCE*DEG360));
 
-	/*Set max angle if arg overshoots 90°*/
+	/*Set max angle if arg overshoots 90° which is physical not possible*/
 	if(arg>DEG90){
 		arg = DEG90;
 	}

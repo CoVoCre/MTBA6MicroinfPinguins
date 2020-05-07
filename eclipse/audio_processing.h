@@ -1,7 +1,7 @@
 /*
  * travelController.h
  *
- *  Created on: April 1, 2020
+ *  Created on: May 7, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -27,6 +27,10 @@
 //Initialization constant
 #define AUDIOP__UNINITIALIZED_FREQ			0
 
+
+/*===========================================================================*/
+/* Structures						 			                            */
+/*===========================================================================*/
 
 /*
  * Structure for destination source

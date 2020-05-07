@@ -1,7 +1,7 @@
 /*
  * comms.c
  *
- *  Created on: Apr 1, 2020
+ *  Created on: May 7, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -15,6 +15,11 @@
 #include <usbcfg.h>
 #include <chstreams.h>
 
+
+/*===========================================================================*/
+/* Constants definition for this file						               */
+/*===========================================================================*/
+
 //We redefine chibios elements for facilitated usage
 #define UART_PORT SD3
 #define UART_PORT_STREAM ((BaseSequentialStream *)&UART_PORT)
@@ -27,11 +32,22 @@
 #define ASCII_NORMAL_TEXT_END 	126
 #define ASCII_DELETE_CHARACTER	127
 
+//Number constants
+#define TWO						2
+
+
+
+/*===========================================================================*/
+/* Static variables definitions 		 			                            */
+/*===========================================================================*/
+
 static bool comms_started = false;
 
-/**
- * @brief   starts all communication things
- */
+
+/*===========================================================================*/
+/* Public functions for setting/getting internal parameters           	  */
+/*===========================================================================*/
+
 void comms_start(void)
 {
 	if(comms_started == false){
@@ -48,28 +64,6 @@ void comms_start(void)
 	comms_started = true;
 }
 
-/**
- * @brief   use same function as chprintf() from chibios for sending information : System formatted output function.
- * @details This function implements a minimal @p printf() like functionality
- *          with output on a @p BaseSequentialStream.
- *          The general parameters format is: %[-][width|*][.precision|*][l|L]p.
- *          The following parameter types (p) are supported:
- *          - <b>x</b> hexadecimal integer.
- *          - <b>X</b> hexadecimal long.
- *          - <b>o</b> octal integer.
- *          - <b>O</b> octal long.
- *          - <b>d</b> decimal signed integer.
- *          - <b>D</b> decimal signed long.
- *          - <b>u</b> decimal unsigned integer.
- *          - <b>U</b> decimal unsigned long.
- *          - <b>c</b> character.
- *          - <b>s</b> string.
- *
- * @param[in] fmt       formatting string
- *
- *@return              The number of bytes that would have been
- *                      written to @p chp if no stream error occurs
- */
 int comms_printf(const char *fmt, ...) {
 	va_list ap;
 	int formatted_bytes;
@@ -81,19 +75,6 @@ int comms_printf(const char *fmt, ...) {
 	return formatted_bytes;
 }
 
-/**
- * @brief  	read from  USB_PORT or UART_PORT and store in char array
- * @note 	this function will print back what the user enters as he enters
- * 				so that he sees what he inputs
- * @warning	this function is blocking for the calling thread until either
- * 				the end char is met or the user presses enter
- *
- * @param[out] readText				pointer to char array where characters should be stored
- * 										\0 will be put at the end of table after reading
- * @param[in] arraySize				dictates max number of chars to be read including last \0 end character
- *
- *@return	Number of chars read and stored in array (not counting \0)
- */
 uint16_t comms_readf(char *readText, uint16_t arraySize){
 	uint16_t numOfCharsRead = 0;
 	char readChar;
@@ -101,19 +82,19 @@ uint16_t comms_readf(char *readText, uint16_t arraySize){
 	for(uint16_t i = 0; i<arraySize-1;i++){
 		readChar = chSequentialStreamGet(UART_PORT_STREAM);
 		switch(readChar){
-		case '\n': //for either \n or \n end string and return
+		case '\n': 									//for either \n or \n end string and return
 		case '\r':
 			readText[i] = '\0';
 			comms_printf(" \n\r");
-			return numOfCharsRead = i-1;	// we do not count \0
-		case ASCII_DELETE_CHARACTER:	//ASCII special delete character
+			return numOfCharsRead = i-1;				// we do not count \0
+		case ASCII_DELETE_CHARACTER:					//ASCII special delete character
 				readText[i-1] = '\0';
 				readText[i] = '\0';
-				i-=2;	//-2 because we want to re read i-1 and for will increment i
+				i-=TWO;								//-2 because we want to re read i-1 and for will increment i
 				comms_printf("\r                                   \r%s",readText);	//erase line
 			break;
 		default:
-			//We protect against special ASCII characters so we do nothing for them
+													//We protect against special ASCII characters so we do nothing for them
 			if( ASCII_NORMAL_TEXT_BEGIN <= readChar && readChar <= ASCII_NORMAL_TEXT_END){
 				readText[i] = readChar;
 				readText[i+1]= '\0';
