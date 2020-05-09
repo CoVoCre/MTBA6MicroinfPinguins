@@ -28,7 +28,7 @@
 		<link>
 			<name>lib</name>
 			<type>2</type>
-			<location>/Users/nicolajschmid/Documents/Lausanne_EPFL/6Semester/Microinformatique/Project/lib</location>
+			<locationURI>$%7BPARENT-1-PROJECT_LOC%7D/lib</locationURI>
 		</link>
 	</linkedResources>
 	<variableList>
