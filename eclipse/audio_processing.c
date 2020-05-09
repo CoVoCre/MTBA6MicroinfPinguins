@@ -1,22 +1,18 @@
 /*
  * audio_processing.c
  *
- *  Created on: May 7, 2020
- *      Authors: Nicolaj Schmid & Théophane Mayaud
+ *  Created on: April 1, 2020
+ *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: Provides all functions for listening to sounds, finding sources, frequencies and their direction
  * Functions prefix for public functions in this file: audioP_
  */
-#include <ch.h>
-#include <hal.h>
-#include <main.h>
-#include <usbcfg.h>
-#include <chprintf.h>
+#include <stdlib.h>
 
 #include <audio/microphone.h>
 #include <audio_processing.h>
-#include <comms.h>
+
 #include <fft.h>
 #include <arm_math.h>
 
@@ -275,8 +271,6 @@ uint16_t audio_ConvertRad(float rad);
 uint16_t audio_ConvertPhase(int16_t arg, uint16_t freq);
 
 
-
-
 /*===========================================================================*/
 /* Public functions for setting/getting internal parameters           	  */
 /*===========================================================================*/
@@ -374,16 +368,11 @@ uint16_t audioP_analyseKiller(Destination *killer)
 	return AUDIOP__SOURCE_NOT_FOUND;
 }
 
-/*
- * Convert the FFT value into a real frequency [Hz]
- */
 uint16_t audioP_convertFreq(uint16_t freq)
 {
 	freq = (int) (CONVERT_FREQ_CONST - CONVERT_FREQ_PARAM*freq);
 	return freq;
 }
-
-
 
 
 /*===========================================================================*/
@@ -414,7 +403,6 @@ void audio_processAudioData(int16_t *data, uint16_t num_samples)
 		}
 	}
 }
-
 
 void audio_analyseSpectre(void)
 {
@@ -461,10 +449,6 @@ uint16_t audio_Peak(float *mic_ampli)
 	}
 
 	if (nb_sources_init > AUDIOP__NB_SOURCES_MAX) {
-#ifdef DEBUG_AUDIO
-	comms_printf(UART_PORT_STREAM, "ERROR audio_Peak:		nb_sources is bigger than NB_SOURCES_MAX \n\r");
-	comms_printf(UART_PORT_STREAM, "nb_sources_init = %u \n\r", nb_sources_init);
-#endif
 		return AUDIOP__ERROR;
 	}
 
@@ -484,34 +468,6 @@ uint16_t audio_Peak(float *mic_ampli)
 		}
 	}
 
-/*Error verification only for debugging! If code is working these errors will never happen.*/
-#ifdef DEBUG_AUDIO
-		for(source_counter=ZERO; source_counter<nb_sources_init; source_counter++){
-			/*Error: Peak freq. out of range [150Hz,1200Hz], peak[i].freq is not in Hz!*/
-			if((source_init[source_counter].freq>FFT_FREQ_MAX) || (source_init[source_counter].freq<FFT_FREQ_MIN)){
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : 	Max freq out of range ! \n\r");
-				chprintf((BaseSequentialStream *)&SD3, "Source %d :			Peak freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
-				return AUDIOP__ERROR;
-			}
-			/*Error: Peak ampli is too low*/
-			if(source_init[source_counter].ampli<AMPLI_THD){
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max ampli too low ! \n\r");
-				chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max ampli = %f \n\r", source_counter, source_init[source_counter].ampli);
-				return AUDIOP__ERROR;
-			}
-			/*Error: Two peak freq are too close, difference<30Hz*/
-			for(uint8_t i=ZERO; i<nb_sources_init; i++){
-				if((i!=source_counter) && (abs(source_init[source_counter].freq-source_init[i].freq)<FREQ_THD)){
-
-					chprintf((BaseSequentialStream *)&SD3, "ERROR audioCalcPeak : Max freq too close ! \n\r");
-					chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", source_counter, audioConvertFreq(source_init[source_counter].freq));
-					chprintf((BaseSequentialStream *)&SD3, "Source %d :	Max freq = %d \n\r", i, audioConvertFreq(source_init[i].freq));
-					return AUDIOP__ERROR;
-				}
-			}
-		}
-#endif
-
 	return AUDIOP__SUCCESS;
 }
 
@@ -521,39 +477,39 @@ int16_t audio_PeakScan(Source *source_init, uint8_t *nb_sources_init, float *mic
 	uint8_t source_exchange						= ZERO;
 	uint8_t peak_mode							= ZERO;
 
-		*nb_sources_init=ZERO;
-		for(uint16_t freq_counter=FFT_FREQ_MIN; freq_counter<FFT_FREQ_MAX; freq_counter++){
+	*nb_sources_init=ZERO;
+	for(uint16_t freq_counter=FFT_FREQ_MIN; freq_counter<FFT_FREQ_MAX; freq_counter++){
 
-			peak_mode=PEAK_MODE_DO_NOTHING;
-			if(mic_ampli[freq_counter]>AMPLI_THD){
-				source_exchange=ZERO;
-				peak_mode=PEAK_MODE_SMALLER;
-				for(source_counter=ZERO; source_counter<*nb_sources_init; source_counter++){
-					if((freq_counter-(&source_init[source_counter])->freq)>FREQ_THD){
-						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
-							source_exchange++;
-							peak_mode=PEAK_MODE_EXCHANGE;
-						}
+		peak_mode=PEAK_MODE_DO_NOTHING;
+		if(mic_ampli[freq_counter]>AMPLI_THD){
+			source_exchange=ZERO;
+			peak_mode=PEAK_MODE_SMALLER;
+			for(source_counter=ZERO; source_counter<*nb_sources_init; source_counter++){
+				if((freq_counter-(&source_init[source_counter])->freq)>FREQ_THD){
+					if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
+						source_exchange++;
+						peak_mode=PEAK_MODE_EXCHANGE;
+					}
+				}
+				else{
+					if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
+						source_exchange = source_counter;
+						peak_mode=PEAK_MODE_REPLACE;
 					}
 					else{
-						if(mic_ampli[freq_counter]>(&source_init[source_counter])->ampli){
-							source_exchange = source_counter;
-							peak_mode=PEAK_MODE_REPLACE;
-						}
-						else{
-							peak_mode=PEAK_MODE_DO_NOTHING;
-						}
-						break;
+						peak_mode=PEAK_MODE_DO_NOTHING;
 					}
+					break;
 				}
 			}
+		}
 
-			if(peak_mode != PEAK_MODE_DO_NOTHING){
-				if(audio_PeakChange(source_exchange, freq_counter, mic_ampli[freq_counter], peak_mode, source_init, nb_sources_init)==AUDIOP__ERROR){
-					return AUDIOP__ERROR;
-				}
+		if(peak_mode != PEAK_MODE_DO_NOTHING){
+			if(audio_PeakChange(source_exchange, freq_counter, mic_ampli[freq_counter], peak_mode, source_init, nb_sources_init)==AUDIOP__ERROR){
+				return AUDIOP__ERROR;
 			}
-		} //end for
+		}
+	} //end for
 
 	return AUDIOP__SUCCESS;
 }
@@ -562,17 +518,9 @@ int16_t audio_PeakChange(int8_t source_exchange, uint16_t freq_counter, float mi
 {
 
 	if(source_exchange<ZERO){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : source_exchange not valid! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "source_exchange = %d \n\r", source_exchange);
-#endif
 		return AUDIOP__ERROR;
 	}
 	else if(source_exchange>AUDIOP__NB_SOURCES_MAX){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakChange : source_counter out of range ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "source_exchange = %d \n\r", source_exchange);
-#endif
 		return AUDIOP__ERROR;
 	}
 
@@ -590,7 +538,7 @@ int16_t audio_PeakChange(int8_t source_exchange, uint16_t freq_counter, float mi
 				if(audio_PeakWriteInit(source_exchange, WRITING_MODE_EQUAL, freq_counter, mic_ampli, source_init)==AUDIOP__ERROR){
 					return AUDIOP__ERROR;
 				}
-			}
+			} // no break
 		case PEAK_MODE_SMALLER:
 			//we need to insert new source at bottom of array, shifting all up, if it is not already full.
 			if(*nb_sources_init<AUDIOP__NB_SOURCES_MAX){
@@ -621,9 +569,6 @@ int16_t audio_PeakChange(int8_t source_exchange, uint16_t freq_counter, float mi
 			break;
 
 		default:
-#ifdef DEBUG_AUDIO
-			chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : peak_mode invalid ! \n\r");
-#endif
 			return AUDIOP__ERROR;
 	}
 	return AUDIOP__SUCCESS;
@@ -634,10 +579,6 @@ int16_t audio_PeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16
 	switch(writing_mode){
 		case WRITING_MODE_HIGHER:
 			if(source_counter>AUDIOP__NB_SOURCES_MAX){
-#ifdef DEBUG_AUDIO
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakWriteInit : source_counter out of range ! \n\r");
-				chprintf((BaseSequentialStream *)&SD3, "sourc_counter = %d \n\r", source_counter);
-#endif
 				return AUDIOP__ERROR;
 			}
 
@@ -648,10 +589,6 @@ int16_t audio_PeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16
 
 		case WRITING_MODE_LOWER:
 			if(source_counter>=AUDIOP__NB_SOURCES_MAX){
-#ifdef DEBUG_AUDIO
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakWriteInit : source_counter out of range ! \n\r");
-				chprintf((BaseSequentialStream *)&SD3, "sourc_counter = %d \n\r", source_counter);
-#endif
 				return AUDIOP__ERROR;
 			}
 
@@ -662,10 +599,6 @@ int16_t audio_PeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16
 
 		case WRITING_MODE_EQUAL:
 			if(source_counter>AUDIOP__NB_SOURCES_MAX){
-#ifdef DEBUG_AUDIO
-				chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakWriteInit : source_counter out of range ! \n\r");
-				chprintf((BaseSequentialStream *)&SD3, "sourc_counter = %d \n\r", source_counter);
-#endif
 				return AUDIOP__ERROR;
 			}
 
@@ -673,10 +606,7 @@ int16_t audio_PeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16
 			(&source_init[source_counter])->ampli = mic_ampli;
 			break;
 		default:
-#ifdef DEBUG_AUDIO
-					chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakWriteInit : writing_mode invalid ! \n\r");
-#endif
-					return AUDIOP__ERROR;
+			return AUDIOP__ERROR;
 
 	}
 	return AUDIOP__SUCCESS;
@@ -685,10 +615,6 @@ int16_t audio_PeakWriteInit(uint8_t source_counter, uint8_t writing_mode, uint16
 int16_t audio_PeakWriteSource(uint8_t source_counter, uint8_t writing_mode,  Source *source_init)
 {
 	if(source_counter>AUDIOP__NB_SOURCES_MAX){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "ERROR audio_PeakWriteSource : source_counter out of range ! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "sourc_counter = %d \n\r", source_counter);
-#endif
 		return AUDIOP__ERROR;
 	}
 
@@ -697,14 +623,13 @@ int16_t audio_PeakWriteSource(uint8_t source_counter, uint8_t writing_mode,  Sou
 			source[source_counter].freq = (&source_init[source_counter])->freq;
 			source[source_counter].ampli = (&source_init[source_counter])->ampli;
 			break;
+
 		case WRITING_MODE_ZERO:
 			source[source_counter].freq = ZERO;
 			source[source_counter].ampli = ZERO;
 			break;
+
 		default:
-#ifdef DEBUG_AUDIO
-			chprintf((BaseSequentialStream *)&SD3, "ERROR audioPeakExchange : peak_mode invalid ! \n\r");
-#endif
 			return AUDIOP__ERROR;
 	}
 
@@ -809,10 +734,6 @@ int16_t audio_DeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_
 	float phase1						=ZERO;								//in rad [-pi,+pi]
 	float phase2						=ZERO;								//in rad [-pi,+pi]
 	int16_t phase_dif				=ZERO;								//in degrees [-180°,+180°]
-#ifdef DEBUG_AUDIO
-	int16_t phase1_deg				=ZERO;								//in degrees [-180°,+180°]
-	int16_t phase2_deg				=ZERO;								//in degrees [-180°,+180°]
-#endif
 
 	/*Calculate phase shift between the signal of mic1 and mic2; atan2f(float y, float x) returns float arctan(y/x) in rad [-pi,+pi]*/
 	phase1 = atan2f(mic_data1[ ((CMPX_VAL*source[source_index].freq)+ONE) ], mic_data1[ (CMPX_VAL*source[source_index].freq) ]);
@@ -821,22 +742,11 @@ int16_t audio_DeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_
 
 	/*Error: Phase out of range; Outside of [-pi,+pi]*/
 	if(phase1>PI || phase1<(-PI) || phase2>PI || phase2<(-PI)){
-#ifdef DEBUG_AUDIO
-		phase1_deg = audio_ConvertRad(phase1);
-		phase2_deg = audio_ConvertRad(phase2);
-		chprintf((BaseSequentialStream *)&SD3, "Error: 		phase1 or Ar2 out of range! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :		Phase1 (rad/deg): 		%f 		%d\n\r", source_index, phase1, phase1_deg);
-		chprintf((BaseSequentialStream *)&SD3, "Source %d :		Phase2 (rad/deg): 		%f 		%d\n\r", source_index, phase2, phase2_deg);
-#endif
 		return AUDIOP__ERROR;
 	}
 
 	/*Error: Arg dif out of range; Max arg dif for all freq. below 1200Hz*/
 	if(phase_dif>PHASE_DIF_LIMIT || phase_dif<(-PHASE_DIF_LIMIT)){
-#ifdef DEBUG_AUDIO
-		chprintf((BaseSequentialStream *)&SD3, "Error: 		Phase dif out of range! \n\r");
-		chprintf((BaseSequentialStream *)&SD3, "Source %d:		Phase dif (deg):		%d\n\r", source_index, phase_dif);
-#endif
 		return AUDIOP__ERROR;
 	}
 
