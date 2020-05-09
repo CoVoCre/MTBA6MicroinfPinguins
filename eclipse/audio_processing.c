@@ -70,6 +70,9 @@
 #define WRITING_MODE_SOURCE				3
 #define WRITING_MODE_ZERO				4
 
+//Angle calculation constants
+#define GO_TOWARDS_SOURCE				1
+#define GO_AWAY_FROM_SOURCE				0
 
 
 /*===========================================================================*/
@@ -231,11 +234,14 @@ int16_t audio_PeakBubblesort(Source *source_init, uint8_t nb_sources_init, float
 /*
  * @brief calculates the angle of a given source
  *
- *  @param[in] source_index	index of source of which the angle is calculated
+ *  @param[in] source_index		index of source of which the angle is calculated
+ *  @param[in] go_towards_source	indicates if robot is moving towards or away from a source:
+ *  								go_towards_source = 1 = GO_TOWARDS_SOURCE
+ * 								go_towards_source = 0 = GO_AWAY_FROM_SOURCE
  *
  * @return	direction angle of source_index, between -180° and 180°, or AUDIOP__ERROR if there was an error
  */
-int16_t audio_determineAngle(uint8_t source_index);
+int16_t audio_determineAngle(uint8_t source_index, bool go_towards_source);
 
 /*
  * @brief	Calculates the phase shift between mic one and mic two
@@ -294,7 +300,7 @@ uint16_t audioP_analyseSources(Destination *destination_scan)
 		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++) {
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
-				if(audio_determineAngle(source_counter) != AUDIOP__ERROR){
+				if(audio_determineAngle(source_counter, GO_AWAY_FROM_SOURCE) != AUDIOP__ERROR){
 					return AUDIOP__KILLER_WHALE_DETECTED;
 				}
 				else{
@@ -303,7 +309,7 @@ uint16_t audioP_analyseSources(Destination *destination_scan)
 				}
 			}
 
-			destination_scan[source_counter].angle = audio_determineAngle(source_counter);
+			destination_scan[source_counter].angle = audio_determineAngle(source_counter, GO_TOWARDS_SOURCE);
 			if(destination_scan[source_counter].angle != AUDIOP__ERROR){
 				destination_scan[source_counter].freq = source[source_counter].freq;
 			}
@@ -325,13 +331,13 @@ uint16_t audioP_analyseDestination(Destination *destination)
 		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++){
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
-				if(audio_determineAngle(source_counter) != AUDIOP__ERROR){
+				if(audio_determineAngle(source_counter, GO_AWAY_FROM_SOURCE) != AUDIOP__ERROR){
 					return AUDIOP__KILLER_WHALE_DETECTED;
 				}
 			}
 
 			if(abs(destination->freq-source[source_counter].freq) < FREQ_THD){
-				destination->angle = audio_determineAngle(source_counter);
+				destination->angle = audio_determineAngle(source_counter, GO_TOWARDS_SOURCE);
 				if(destination->angle != AUDIOP__ERROR){
 					destination->freq = source[source_counter].freq;
 					return AUDIOP__SUCCESS;
@@ -353,7 +359,7 @@ uint16_t audioP_analyseKiller(Destination *killer)
 		for (uint8_t source_counter = ZERO; source_counter < nb_sources; source_counter++){
 
 			if(abs(KILLER_FREQ-source[source_counter].freq) < FREQ_THD){
-				killer->angle = audio_determineAngle(source_counter);
+				killer->angle = audio_determineAngle(source_counter, GO_AWAY_FROM_SOURCE);
 				if(killer->angle != AUDIOP__ERROR){
 					killer->freq = source[source_counter].freq;
 					return AUDIOP__SUCCESS;
@@ -726,13 +732,13 @@ int16_t audio_PeakBubblesort(Source *source_init, uint8_t nb_sources_init, float
 	return AUDIOP__SUCCESS;
 }
 
-int16_t audio_determineAngle(uint8_t source_index)
+int16_t audio_determineAngle(uint8_t source_index, bool go_towards_source)
 {
 	int16_t arg_dif_left_right							= ZERO;
 	int16_t arg_dif_back_front							= ZERO;
-	int16_t arg_dif										= ZERO;
+	int16_t angle										= ZERO;
 	static uint8_t ema_counter[AUDIOP__NB_SOURCES_MAX];
-	static int16_t ema_arg_dif[AUDIOP__NB_SOURCES_MAX];
+	static int16_t ema_angle[AUDIOP__NB_SOURCES_MAX];
 
 	/*Calculate the angle shift with respect to the central axe of the robot*/
 	arg_dif_left_right = audio_DeterminePhase(mic_data_left, mic_data_right, source_index);
@@ -747,33 +753,55 @@ int16_t audio_determineAngle(uint8_t source_index)
 	arg_dif_left_right = audio_ConvertPhase(arg_dif_left_right, audioP_convertFreq(source[source_index].freq));
 	arg_dif_back_front = audio_ConvertPhase(arg_dif_back_front, audioP_convertFreq(source[source_index].freq));
 
-	/*Determine plane of operation and averaging pairs of mic*/
-	if((arg_dif_left_right>=ZERO) && (arg_dif_back_front>=ZERO)){
-		arg_dif = (int16_t) ((arg_dif_left_right-arg_dif_back_front+DEG90)/NB_MIC_PAIR);
-	}
-	else if((arg_dif_left_right>ZERO) && (arg_dif_back_front<ZERO)){
-		arg_dif = (int16_t) ((-arg_dif_left_right-arg_dif_back_front+DEG270)/NB_MIC_PAIR);
-	}
-	else if((arg_dif_left_right<ZERO) && (arg_dif_back_front>ZERO)){
-		arg_dif = (int16_t) ((arg_dif_left_right+arg_dif_back_front-DEG90)/NB_MIC_PAIR);
+	/* Two calculation modes: GO_TOWARDS_SOURCE (if) and GO_AWAY_FROM_SOURCE (else)
+	 * 	GO_TOWARDS_SOURCE:		Robot moves in direction of the source -> 0° is in the front of the robot.
+	 * 	MOVE_AWAY_FROM_SOURCE:	Robot moves in opposite direction of the source -> 0° is in the back of the robot.
+	 * For each mode:	The angle of the mic. pair back-front is projected onto the axes of mic. pair left-right.
+	 * 					The angles are converted from angle [-90°,90°] into angle [-180°,180°].
+	 * 					The angles from both mic. pairs are averaged.*/
+	if(go_towards_source){
+		if((arg_dif_left_right>=ZERO) && (arg_dif_back_front>=ZERO)){
+			angle = (int16_t) ((arg_dif_left_right-arg_dif_back_front+DEG90)/NB_MIC_PAIR);
+		}
+		else if((arg_dif_left_right>ZERO) && (arg_dif_back_front<ZERO)){
+			angle = (int16_t) ((-arg_dif_left_right-arg_dif_back_front+DEG270)/NB_MIC_PAIR);
+		}
+		else if((arg_dif_left_right<ZERO) && (arg_dif_back_front>ZERO)){
+			angle = (int16_t) ((arg_dif_left_right+arg_dif_back_front-DEG90)/NB_MIC_PAIR);
+		}
+		else{
+			angle = (int16_t) ((-arg_dif_left_right+arg_dif_back_front-DEG270)/NB_MIC_PAIR);
+		}
 	}
 	else{
-		arg_dif = (int16_t) ((-arg_dif_left_right+arg_dif_back_front-DEG270)/NB_MIC_PAIR);
+		if((arg_dif_left_right>=ZERO) && (arg_dif_back_front>=ZERO)){
+			angle = (int16_t) ((arg_dif_left_right-arg_dif_back_front-DEG270)/NB_MIC_PAIR);
+		}
+		else if((arg_dif_left_right>ZERO) && (arg_dif_back_front<ZERO)){
+			angle = (int16_t) ((-arg_dif_left_right-arg_dif_back_front-DEG90)/NB_MIC_PAIR);
+		}
+		else if((arg_dif_left_right<ZERO) && (arg_dif_back_front>ZERO)){
+			angle = (int16_t) ((arg_dif_left_right+arg_dif_back_front+DEG270)/NB_MIC_PAIR);
+		}
+		else{
+			angle = (int16_t) ((-arg_dif_left_right+arg_dif_back_front+DEG90)/NB_MIC_PAIR);
+		}
 	}
 
 	/*Exponential Moving Average (EMA); EMA_WEIGHT range: [0,1], if smaller past results have more weight*/
-	if(ema_counter[source_index]==ZERO){
-		ema_arg_dif[source_index] = arg_dif;
+	if(ema_counter[source_index]==ZERO){			//Initialization
+		ema_angle[source_index] = angle;
 		ema_counter[source_index]++;
 	}
-	else if(((ema_arg_dif[source_index]<-DEG90) && (arg_dif>DEG90)) || ((ema_arg_dif[source_index]>DEG90) && (arg_dif<-DEG90))){				//Jump from 180° to -180° or inverse
-		ema_arg_dif[source_index] = arg_dif;
+	//Jump from positive angle to negative or vis-versa
+	else if(((ema_angle[source_index]<-DEG90) && (angle>DEG90)) || ((ema_angle[source_index]>DEG90) && (angle<-DEG90))){				//Jump from 180° to -180° or inverse
+		ema_angle[source_index] = angle;
 	}
-	else{
-		ema_arg_dif[source_index] = (int16_t) (arg_dif*EMA_WEIGHT + ema_arg_dif[source_index]*(ONE-EMA_WEIGHT));
+	else{										//Moving average
+		ema_angle[source_index] = (int16_t) (angle*EMA_WEIGHT + ema_angle[source_index]*(ONE-EMA_WEIGHT));
 	}
 
-	return ema_arg_dif[source_index];
+	return ema_angle[source_index];
 }
 
 int16_t audio_DeterminePhase(float *mic_data1, float *mic_data2, uint8_t source_index)

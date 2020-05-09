@@ -222,10 +222,10 @@ bool updateIsObstacleReached(void)
 {
 	static uint8_t discardStartMeasurements 	= 0;
 
-	static int emaPastValueLeft 				= 0;
-	static int emaPastValueRight 			= 0;
-	static int emaPastValueFrontLeft			= 0;
-	static int emaPastValueFrontRight		= 0;
+	int emaPastValueLeft 					= 0;
+	int emaPastValueRight 					= 0;
+	int emaPastValueFrontLeft				= 0;
+	int emaPastValueFrontRight				= 0;
 
 	bool isDestinationReached = false;
 

@@ -34,11 +34,7 @@
 #define DIR_SOURCE_MAX_TEXT_LENGTH	10
 #define NUM_BASE_10					10
 
-//Number constants
-#define DEG180						180
-
 //Time constants
-#define MSEC_50						50
 #define MSEC_150						150
 #define SEC_2						2000
 #define SEC_3						3000
@@ -150,9 +146,8 @@ static THD_FUNCTION(ThdLed, arg)
     (void)arg;
 
     while(true){
-		chThdSleepMilliseconds(MSEC_50);				//Wait a short time in case it was a wrong alarm
+		chThdSleepMilliseconds(MSEC_150);				//Waits a short period of time in case it was a wrong alarm and killerIsComing is set again to zero
     		while(killerIsComing){
-    			chThdSleepMilliseconds(MSEC_150);
     			palTogglePad(GPIOD, GPIOD_LED1);
 			chThdSleepMilliseconds(MSEC_150);
 			palTogglePad(GPIOD, GPIOD_LED3);
@@ -160,6 +155,7 @@ static THD_FUNCTION(ThdLed, arg)
 			palTogglePad(GPIOD, GPIOD_LED5);
 			chThdSleepMilliseconds(MSEC_150);
 			palTogglePad(GPIOD, GPIOD_LED7);
+			chThdSleepMilliseconds(MSEC_150);
     		}
     		palSetPad(GPIOD, GPIOD_LED1);
     		palSetPad(GPIOD, GPIOD_LED3);
@@ -349,14 +345,7 @@ void escapeKiller(void)
 			killerIsComing = false;
 		}
 		else{
-
-			if(killer.angle >= 0){								//Go in opposite direction than the sound is coming from
-				travelCtrl_goToAngle(killer.angle-DEG180);
-			}
-			else{
-				travelCtrl_goToAngle(killer.angle+DEG180);
-			}
-
+			travelCtrl_goToAngle(killer.angle);
 		}
 	}
 
@@ -389,7 +378,7 @@ void destinationReached(void)
 
 	travCtrl_stopMoving();
 	palClearPad(GPIOB, GPIOB_LED_BODY);
-	chThdSleepMilliseconds(MSEC_50);				//Wait a short time to not scan the motor noise when restarting
+	chThdSleepMilliseconds(MSEC_150);				//Wait a short period of time that the motor noises are not scanned when restarting
 }
 
 
