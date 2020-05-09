@@ -7,19 +7,17 @@
  *
  * Introduction: Provides necessary interaction with computer for the project
  */
-
 #ifndef COMMS_H_
 #define COMMS_H_
 
-#include <ch.h>
-#include <hal.h>
-#include <chprintf.h>
+/*===========================================================================*/
+/* Public functions definitions            									 */
+/*===========================================================================*/
 
 /**
  * @brief   starts all communication processes
  */
 void comms_start(void);
-
 
 /**
  * @brief   use same function as chprintf() from chibios for sending information : System formatted output function.
