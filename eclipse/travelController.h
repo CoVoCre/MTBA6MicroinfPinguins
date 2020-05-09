@@ -1,22 +1,27 @@
 /*
  * travelController.h
  *
- *  Created on: May 7, 2020
+ *  Created on: April 1, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
  * Introduction: This file deals with the control of the motors from the direction to be reached,
  * 		and stops when an obstacle/the objective is reached (detection with proximity sensor).
  */
-
 #ifndef TRAVELCONTROLLER_H_
 #define TRAVELCONTROLLER_H_
+
+
+/*===========================================================================*/
+/* Types								 			                            */
+/*===========================================================================*/
 
 /*
  * @brief type for callback function when obstacle is reached
  * @note is used to declare a pointer to a function that will be called when an obstacle has been reached.
  */
 typedef void (*travCtrl_obstacleReached)(void);
+
 
 /*===========================================================================*/
 /* Public functions															*/
@@ -44,8 +49,9 @@ void travelCtrl_goToAngle(int16_t directionAngle);
 void travCtrl_stopMoving(void);
 
 /*
- * @brief   moves backwards after a source was reached
+ * @brief   moves backwards until stopped by travCtrl_stopMoving
 */
 void travCtrl_moveBackwards(void);
+
 
 #endif /* TRAVELCONTROLLER_H_ */

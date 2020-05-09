@@ -1,7 +1,7 @@
 /*
  * travelController.c
  *
- *  Created on: May 7, 2020
+ *  Created on: April 1, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -12,14 +12,13 @@
  */
 
 #include <ch.h> 							//for chibios threads functionality
+#include <msgbus/messagebus.h> 			//for IR sensors thread functionality
 
 #include <motors.h>
 #include <sensors/VL53L0X/VL53L0X.h>		//Time of flight sensor library
 #include <sensors/proximity.h>			//infrared sensors
 
 #include <travelController.h>
-#include "msgbus/messagebus.h"
-
 
 
 /*===========================================================================*/
@@ -51,12 +50,12 @@
 #define MOT_CONTROLLER_PERIOD 				10 			//in ms, will be the interval at which controller thread will re-adjust motor speeds
 #define MOT_CONTROLLER_WORKING_AREA_SIZE 	1024 		//1024 because it was found to be enough: less results in seg faults
 
-/* @note EMA_WEIGHT
+/* @note EMA_WEIGHT_XXX
  * We use this to calculate exponential moving averages (ema) of some values, in order to reduce
- * impact of fluctuations that are too quick to represent real changes. We calculate an ema like this :
- * If faster response time overall is needed, reduce EMA_WEIGHT.
+ * impact of fluctuations that are too quick to represent real changes.
+ * If faster response time overall is needed, reduce EMA_WEIGHT_XXX.
  */
-#define EMA_WEIGHT 							0.9
+#define EMA_WEIGHT_MOT 						0.9
 #define EMA_WEIGHT_TOF 						0.8
 
 /* @note DISCARD_FIRST_N_TOF_MEASURES
@@ -64,12 +63,11 @@
  */
 #define DISCARD_FIRST_N_TOF_MEASURES 		50
 
-#define IR_STOP_VALUE						300	//IR threshold for source detection
+#define IR_STOP_VALUE						300	//IR threshold for source proximity detection
 #define IR_LEFT 								6	//EPUCK IR-seonsor IR7
 #define IR_RIGHT								1	//EPUCK IR-seonsor IR2
 #define IR_FRONT_LEFT 						7	//EPUCK IR-seonsor IR8
 #define IR_FRONT_RIGHT 						0	//EPUCK IR-seonsor IR1
-
 
 
 /*===========================================================================*/
@@ -87,7 +85,6 @@ static bool robShouldMove = false;		//the motor controller will only update spee
 static travCtrl_obstacleReached obstacleReachedCallBack;
 
 
-
 /*===========================================================================*/
 /* Variables and functions for the use of the IR sensors						*/
 /*===========================================================================*/
@@ -96,10 +93,8 @@ messagebus_t bus;
 MUTEX_DECL(bus_lock);
 CONDVAR_DECL(bus_condvar);
 
-
-
 /*===========================================================================*/
-/* Private functions definitions, no comments as they are already above function code*/
+/* Private functions definitions                                             */
 /*===========================================================================*/
 
 /**
@@ -130,7 +125,6 @@ int16_t motControllerCalculatetRotationSpeed(void);
  * @return 	The calculated speed for the motors in steps per second, between 0 and MOT_MAX_NEEDED_SPS
 */
 uint16_t motControllerCalculateForwardSpeed(void);
-
 
 
 /*===========================================================================*/
@@ -213,7 +207,6 @@ void travCtrl_moveBackwards(void)
 }
 
 
-
 /*===========================================================================*/
 /* Private functions	 code												   */
 /*===========================================================================*/
@@ -280,8 +273,8 @@ void motControllerUpdateSpeeds(void)
 	leftMotSpeed = (int16_t) robForwardSpeed + (int16_t) motSpeedDiff;
 
 	//We use exponential moving average values because speeds must not be changed to fast or motors make grinding noises
-	ema_rightMotSpeed = (int16_t) (EMA_WEIGHT*ema_rightMotSpeed+(1-EMA_WEIGHT)*rightMotSpeed);
-	ema_leftMotSpeed = (int16_t) (EMA_WEIGHT*ema_leftMotSpeed+(1-EMA_WEIGHT)*leftMotSpeed);
+	ema_rightMotSpeed = (int16_t) (EMA_WEIGHT_MOT*ema_rightMotSpeed+(1-EMA_WEIGHT_MOT)*rightMotSpeed);
+	ema_leftMotSpeed = (int16_t) (EMA_WEIGHT_MOT*ema_leftMotSpeed+(1-EMA_WEIGHT_MOT)*leftMotSpeed);
 
 	/*We saw that when speeds were below MOT_MIN_SPEED_SPS steps per second,
 	 * the motors were vibrating, so here we offset xxxMotSpeed values,
@@ -360,5 +353,3 @@ uint16_t motControllerCalculateForwardSpeed(void)
 
 	return robSpeed;
 }
-
-
