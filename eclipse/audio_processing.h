@@ -1,7 +1,7 @@
 /*
  * travelController.h
  *
- *  Created on: May 7, 2020
+ *  Created on: April 1, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -12,9 +12,10 @@
 #ifndef AUDIO_PROCESSING_H
 #define AUDIO_PROCESSING_H
 
-/*
- * Definitions
- */
+/*===========================================================================*/
+/* Constants definition for this library						               */
+/*===========================================================================*/
+
 //Program parameters
 #define AUDIOP__NB_SOURCES_MAX				5						//Max 255 sources because nb_sources is uint8_t
 
@@ -90,5 +91,6 @@ uint16_t audioP_analyseKiller(Destination *killer);
  * @return	real frequency in Hz
  */
 uint16_t audioP_convertFreq(uint16_t freq);
+
 
 #endif /* AUDIO_PROCESSING_H */
