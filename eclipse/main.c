@@ -1,7 +1,7 @@
 /*
  * main.c
  *
- *  Created on: May 7, 2020
+ *  Created on: April 1, 2020
  *  Authors: Nicolaj Schmid & Théophane Mayaud
  * 	Project: EPFL MT BA6 penguins epuck2 project
  *
@@ -237,7 +237,6 @@ void startPrintf(void)
 
 void communicationUser(Destination *destination)
 {
-
 	char readNumberText[DIR_SOURCE_MAX_TEXT_LENGTH];
 	uint8_t readNumber 	= AUDIOP__NB_SOURCES_MAX;					//AUDIOP__NB_SOURCES_MAX is not a valid number of sources
 	char *endTextReadPointer; 										//pointer to store where strtol finishes reading text
@@ -249,7 +248,7 @@ void communicationUser(Destination *destination)
 	//Scanning for available sources (and killer whales 🐋)
 	nb_sources = detectSources(destination_scan);
 
-	//Keep asking until the the input is valid or r was pressed
+	//Keep asking until the input is valid or r was pressed
 	while(keepAsking == true){
 
 		comms_printf( "\n\rPlease enter the number of the penguin you want to go to or enter 'r' to rescan penguins.\n\r");
@@ -273,7 +272,7 @@ void communicationUser(Destination *destination)
 				comms_printf( "It seems the number %u you just entered is not a valid source. Please try again !\n\r", readNumber);
 			}
 		}
-		//r was pressed an sources are rescanned
+		//r was pressed so sources are rescanned
 		else{
 			nb_sources = detectSources(destination_scan);
 		}
@@ -353,7 +352,7 @@ void escapeKiller(void)
 
 void printSources(uint16_t nb_sources, Destination *destination_scan)
 {
-	//We are sure there are no more errors or killer whales inside destination_scan and, so we do not check for errors anymore
+	//We are sure there are no more errors or killer whales inside destination_scan, so we do not check for errors here
 	comms_printf( "The following penguins are available: \n\r");
 	if(nb_sources==0){
 		comms_printf("    ...No penguins were found...\n\r");
@@ -378,7 +377,7 @@ void destinationReached(void)
 
 	travCtrl_stopMoving();
 	palClearPad(GPIOB, GPIOB_LED_BODY);
-	chThdSleepMilliseconds(MSEC_150);				//Wait a short period of time that the motor noises are not scanned when restarting
+	chThdSleepMilliseconds(MSEC_150);		//Wait a short period of time so that the motor noises are not scanned when restarting
 }
 
 
